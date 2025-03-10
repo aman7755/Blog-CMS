@@ -7,9 +7,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useSession } from "next-auth/react";
-import RichTextEditor from "reactjs-tiptap-editor";
-import { extensions } from "@/app/extensions";
+import dynamic from "next/dynamic";
 import TurndownService from "turndown";
+
+// Dynamically import RichTextEditor, disabling SSR
+const RichTextEditor = dynamic(() => import("reactjs-tiptap-editor"), {
+  ssr: false, // Ensures it only loads on the client
+});
+
+// Import extensions statically (assuming they’re safe; adjust if needed)
+import { extensions } from "@/app/extensions";
 
 export default function NewPostPage() {
   const router = useRouter();
@@ -21,6 +28,8 @@ export default function NewPostPage() {
   const [isLoading, setIsLoading] = useState(false);
   const editor = useRef(null); // Ref to access editor instance
   const turndownService = new TurndownService();
+
+  // Configure TurndownService for card blocks
   turndownService.addRule("cardBlock", {
     filter: (node: any) =>
       node.nodeName === "DIV" &&
@@ -34,7 +43,7 @@ export default function NewPostPage() {
   const insertCardBlock = () => {
     const cardId = prompt("Enter Card ID:");
     if (cardId && editor.current) {
-      (editor.current as any).commands.insertCardBlock({ cardId, position: 0 }); // Position will be updated on save
+      (editor.current as any).commands.insertCardBlock({ cardId, position: 0 });
     }
   };
 
@@ -181,10 +190,11 @@ export default function NewPostPage() {
           />
         </div>
 
+        {/* Uncomment if you want the preview back */}
         {/* <div className="space-y-2">
           <Label>Preview</Label>
           <textarea
-            style={{ height: 200, width: '100%' }}
+            style={{ height: 200, width: "100%" }}
             readOnly
             value={displayedContent}
           />

@@ -1,211 +1,166 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PenSquare, Eye, Trash2, Plus } from "lucide-react";
+import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
-import { useSession } from "next-auth/react";
-import dynamic from "next/dynamic";
-import TurndownService from "turndown";
 
-// Dynamically import RichTextEditor, disabling SSR
-const RichTextEditor = dynamic(() => import("reactjs-tiptap-editor"), {
-  ssr: false, // Ensures it only loads on the client
-});
+interface Post {
+  id: string;
+  title: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
 
-// Import extensions statically (assuming they’re safe; adjust if needed)
-import { extensions } from "@/app/extensions";
-
-export default function NewPostPage() {
+export default function PostsPage() {
   const router = useRouter();
   const { toast } = useToast();
-  const { data: session, status } = useSession();
-  const [title, setTitle] = useState("");
-  const [content, setContent] = useState("");
-  const [outputFormat, setOutputFormat] = useState("html"); // Toggle between HTML and Markdown
-  const [isLoading, setIsLoading] = useState(false);
-  const editor = useRef(null); // Ref to access editor instance
-  const turndownService = new TurndownService();
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Configure TurndownService for card blocks
-  turndownService.addRule("cardBlock", {
-    filter: (node: any) =>
-      node.nodeName === "DIV" &&
-      node.getAttribute("data-type") === "card-block",
-    replacement: (content: any, node: any) => {
-      const cardId = node.getAttribute("data-card-id");
-      return `[Card Block ID: ${cardId}]`;
-    },
-  });
-
-  const insertCardBlock = () => {
-    const cardId = prompt("Enter Card ID:");
-    if (cardId && editor.current) {
-      (editor.current as any).commands.insertCardBlock({ cardId, position: 0 });
-    }
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (status === "loading") return;
-    if (!(session?.user as any).id) {
-      toast({
-        title: "Error",
-        description: "You must be logged in to create a post",
-        variant: "destructive",
-      });
-      router.push("/login");
-      return;
-    }
-
-    setIsLoading(true);
-
-    try {
-      const slug = title
-        .toLowerCase()
-        .replace(/[^\w\s]/g, "")
-        .replace(/\s+/g, "-");
-
-      // Extract media and card blocks from content
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(content, "text/html");
-      const mediaElements = doc.querySelectorAll("img, video");
-      const cardBlocks = doc.querySelectorAll('div[data-type="card-block"]');
-
-      const media = Array.from(mediaElements).map((el: any) => ({
-        url: el.src,
-        type: el.tagName.toLowerCase() === "img" ? "image" : "video",
-      }));
-
-      const cardBlocksData = Array.from(cardBlocks).map((el, index) => ({
-        cardId: el.getAttribute("data-card-id"),
-        position: index,
-      }));
-
-      // Remove card blocks from content (we'll store them separately)
-      let cleanContent = content;
-      cardBlocks.forEach((el) => {
-        cleanContent = cleanContent.replace(
-          el.outerHTML,
-          `[Card Block ID: ${el.getAttribute("data-card-id")}]`
-        );
-      });
-
-      const response = await fetch("/api/posts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title,
-          content:
-            outputFormat === "markdown"
-              ? turndownService.turndown(cleanContent)
-              : cleanContent,
-          slug,
-          excerpt: cleanContent.replace(/<[^>]+>/g, "").substring(0, 160),
-          authorId: (session?.user as any).id,
-          media,
-          cardBlocks: cardBlocksData,
-        }),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to create post");
+  useEffect(() => {
+    const fetchPosts = async () => {
+      try {
+        const response = await fetch("/api/posts");
+        if (!response.ok) throw new Error("Failed to fetch posts");
+        const data = await response.json();
+        setPosts(data);
+      } catch (error) {
+        toast({
+          title: "Error",
+          description: "Failed to load posts",
+          variant: "destructive",
+        });
+      } finally {
+        setIsLoading(false);
       }
+    };
 
-      toast({
-        title: "Success",
-        description: "Post created successfully",
+    fetchPosts();
+  }, [toast]);
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this post?")) return;
+    try {
+      const response = await fetch(`/api/posts/${id}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
       });
-      router.push("/dashboard/posts");
-    } catch (error: any) {
+      if (!response.ok) throw new Error("Failed to delete post");
+      setPosts(posts.filter((post) => post.id !== id));
+      toast({ title: "Success", description: "Post deleted successfully" });
+    } catch (error) {
       toast({
         title: "Error",
-        description: error.message || "Failed to create post",
+        description: "Failed to delete post",
         variant: "destructive",
       });
-    } finally {
-      setIsLoading(false);
     }
   };
 
-  if (status === "loading") {
-    return <div>Loading...</div>;
-  }
-
-  const displayedContent =
-    outputFormat === "html" ? content : turndownService.turndown(content);
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "published":
+        return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100";
+      case "draft":
+        return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100";
+      case "archived":
+        return "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-100";
+      default:
+        return "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-100";
+    }
+  };
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">New Post</h1>
-        <Button onClick={() => router.push("/dashboard/posts")}>Cancel</Button>
+        <h1 className="text-3xl font-bold">Posts</h1>
+        <Button onClick={() => router.push("/dashboard/posts/new")}>
+          <Plus className="h-4 w-4 mr-2" />
+          New Post
+        </Button>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-8">
-        <div className="space-y-2">
-          <Label htmlFor="title">Title</Label>
-          <Input
-            id="title"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Enter post title"
-            required
-          />
-        </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>All Posts</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {posts.map((post) => (
+              <div
+                key={post.id}
+                className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent/50 transition-colors"
+              >
+                <div className="space-y-1">
+                  <h3 className="font-medium">{post.title}</h3>
+                  <div className="flex items-center space-x-2 text-sm text-muted-foreground">
+                    <span
+                      className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(
+                        post.status
+                      )}`}
+                    >
+                      {post.status}
+                    </span>
+                    <span>•</span>
+                    <span>
+                      Updated {format(new Date(post.updatedAt), "MMM d, yyyy")}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() =>
+                      router.push(`/dashboard/posts/${post.id}/edit`)
+                    }
+                  >
+                    <PenSquare className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => router.push(`/dashboard/posts/${post.id}`)}
+                  >
+                    <Eye className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => handleDelete(post.id)}
+                  >
+                    <Trash2 className="h-4 w-4 text-destructive" />
+                  </Button>
+                </div>
+              </div>
+            ))}
 
-        <div className="space-y-2">
-          <Label>Content</Label>
-          <div className="flex gap-4 mb-4">
-            <Button type="button" onClick={insertCardBlock}>
-              Insert Card Block
-            </Button>
-            <Button
-              type="button"
-              onClick={() => setOutputFormat("html")}
-              variant={outputFormat === "html" ? "default" : "outline"}
-            >
-              HTML
-            </Button>
-            <Button
-              type="button"
-              onClick={() => setOutputFormat("markdown")}
-              variant={outputFormat === "markdown" ? "default" : "outline"}
-            >
-              Markdown
-            </Button>
+            {!isLoading && posts.length === 0 && (
+              <div className="text-center py-12">
+                <h3 className="text-lg font-medium text-muted-foreground">
+                  No posts yet
+                </h3>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Get started by creating your first post
+                </p>
+                <Button
+                  className="mt-4"
+                  onClick={() => router.push("/dashboard/posts/new")}
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create Post
+                </Button>
+              </div>
+            )}
           </div>
-          <RichTextEditor
-            ref={editor}
-            output="html"
-            content={content}
-            onChangeContent={(value) => setContent(value)}
-            extensions={extensions}
-            dark={false}
-            disabled={isLoading}
-          />
-        </div>
-
-        {/* Uncomment if you want the preview back */}
-        {/* <div className="space-y-2">
-          <Label>Preview</Label>
-          <textarea
-            style={{ height: 200, width: "100%" }}
-            readOnly
-            value={displayedContent}
-          />
-        </div> */}
-
-        <div className="flex justify-end space-x-4">
-          <Button type="submit" disabled={isLoading}>
-            {isLoading ? "Creating..." : "Create Post"}
-          </Button>
-        </div>
-      </form>
+        </CardContent>
+      </Card>
     </div>
   );
 }
