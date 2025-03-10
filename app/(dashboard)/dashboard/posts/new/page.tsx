@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,13 +10,10 @@ import { useSession } from "next-auth/react";
 import dynamic from "next/dynamic";
 import TurndownService from "turndown";
 
-// Dynamically import RichTextEditor, disabling SSR
+// Dynamically import RichTextEditor
 const RichTextEditor = dynamic(() => import("reactjs-tiptap-editor"), {
-  ssr: false, // Ensures it only loads on the client
+  ssr: false,
 });
-
-// Import extensions statically (assuming they’re safe; adjust if needed)
-import { extensions } from "@/app/extensions";
 
 export default function NewPostPage() {
   const router = useRouter();
@@ -24,12 +21,19 @@ export default function NewPostPage() {
   const { data: session, status } = useSession();
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
-  const [outputFormat, setOutputFormat] = useState("html"); // Toggle between HTML and Markdown
+  const [outputFormat, setOutputFormat] = useState("html");
   const [isLoading, setIsLoading] = useState(false);
-  const editor = useRef(null); // Ref to access editor instance
+  const [extensions, setExtensions] = useState<any[]>([]); // Store extensions client-side
+  const editor = useRef(null);
   const turndownService = new TurndownService();
 
-  // Configure TurndownService for card blocks
+  // Load extensions only on the client
+  useEffect(() => {
+    import("@/app/extensions").then((mod) => {
+      setExtensions(mod.extensions);
+    });
+  }, []);
+
   turndownService.addRule("cardBlock", {
     filter: (node: any) =>
       node.nodeName === "DIV" &&
@@ -49,7 +53,6 @@ export default function NewPostPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
     if (status === "loading") return;
     if (!(session?.user as any).id) {
       toast({
@@ -62,14 +65,11 @@ export default function NewPostPage() {
     }
 
     setIsLoading(true);
-
     try {
       const slug = title
         .toLowerCase()
         .replace(/[^\w\s]/g, "")
         .replace(/\s+/g, "-");
-
-      // Extract media and card blocks from content
       const parser = new DOMParser();
       const doc = parser.parseFromString(content, "text/html");
       const mediaElements = doc.querySelectorAll("img, video");
@@ -85,7 +85,6 @@ export default function NewPostPage() {
         position: index,
       }));
 
-      // Remove card blocks from content (we'll store them separately)
       let cleanContent = content;
       cardBlocks.forEach((el) => {
         cleanContent = cleanContent.replace(
@@ -136,8 +135,10 @@ export default function NewPostPage() {
     return <div>Loading...</div>;
   }
 
-  const displayedContent =
-    outputFormat === "html" ? content : turndownService.turndown(content);
+  // Show a loading state until extensions are loaded
+  if (extensions.length === 0) {
+    return <div>Loading editor...</div>;
+  }
 
   return (
     <div className="space-y-6">
@@ -184,21 +185,11 @@ export default function NewPostPage() {
             output="html"
             content={content}
             onChangeContent={(value) => setContent(value)}
-            extensions={extensions}
+            extensions={extensions} // Use state-loaded extensions
             dark={false}
             disabled={isLoading}
           />
         </div>
-
-        {/* Uncomment if you want the preview back */}
-        {/* <div className="space-y-2">
-          <Label>Preview</Label>
-          <textarea
-            style={{ height: 200, width: "100%" }}
-            readOnly
-            value={displayedContent}
-          />
-        </div> */}
 
         <div className="flex justify-end space-x-4">
           <Button type="submit" disabled={isLoading}>
