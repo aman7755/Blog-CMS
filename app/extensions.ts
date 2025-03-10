@@ -1,5 +1,5 @@
-import { Node } from '@tiptap/core';
-import { locale } from 'reactjs-tiptap-editor/locale-bundle';
+import { Node } from "@tiptap/core";
+import { locale } from "reactjs-tiptap-editor/locale-bundle";
 import {
   Attachment,
   BaseKit,
@@ -46,15 +46,15 @@ import {
   Twitter,
   Underline,
   Video,
-} from 'reactjs-tiptap-editor/extension-bundle';
-import 'reactjs-tiptap-editor/style.css';
-import 'katex/dist/katex.min.css';
+} from "reactjs-tiptap-editor/extension-bundle";
+import "reactjs-tiptap-editor/style.css";
+import "katex/dist/katex.min.css";
 
 // Custom CardBlock Extension
 const CardBlock = Node.create({
-  name: 'cardBlock',
+  name: "cardBlock",
 
-  group: 'block',
+  group: "block",
 
   atom: true,
 
@@ -74,8 +74,8 @@ const CardBlock = Node.create({
       {
         tag: 'div[data-type="card-block"]',
         getAttrs: (dom) => ({
-          cardId: dom.getAttribute('data-card-id'),
-          position: parseInt(dom.getAttribute('data-position') || '0', 10),
+          cardId: dom.getAttribute("data-card-id"),
+          position: parseInt(dom.getAttribute("data-position") || "0", 10),
         }),
       },
     ];
@@ -83,25 +83,27 @@ const CardBlock = Node.create({
 
   renderHTML({ node }) {
     return [
-      'div',
+      "div",
       {
-        'data-type': 'card-block',
-        'data-card-id': node.attrs.cardId,
-        'data-position': node.attrs.position,
-        style: 'border: 1px dashed gray; padding: 10px; text-align: center;',
+        "data-type": "card-block",
+        "data-card-id": node.attrs.cardId,
+        "data-position": node.attrs.position,
+        style: "border: 1px dashed gray; padding: 10px; text-align: center;",
       },
       `Card Block (ID: ${node.attrs.cardId})`,
     ];
   },
 
-  addCommands() {
+  addCommands(): any {
     return {
-      insertCardBlock: (attrs) => ({ commands }) => {
-        return commands.insertContent({
-          type: this.name,
-          attrs,
-        });
-      },
+      insertCardBlock:
+        (attrs: any) =>
+        ({ commands }: any) => {
+          return commands.insertContent({
+            type: this.name,
+            attrs,
+          });
+        },
     };
   },
 });
@@ -132,7 +134,7 @@ export const extensions = [
   Highlight,
   BulletList,
   OrderedList,
-  TextAlign.configure({ types: ['heading', 'paragraph'], spacer: true }),
+  TextAlign.configure({ types: ["heading", "paragraph"], spacer: true }),
   Indent,
   LineHeight,
   TaskList.configure({
@@ -145,15 +147,15 @@ export const extensions = [
   Image.configure({
     upload: async (file: File) => {
       const formData = new FormData();
-      formData.append('file', file);
-      formData.append('type', 'image');
+      formData.append("file", file);
+      formData.append("type", "image");
 
-      const response = await fetch('/api/upload', {
-        method: 'POST',
+      const response = await fetch("/api/upload", {
+        method: "POST",
         body: formData,
       });
 
-      if (!response.ok) throw new Error('Image upload failed');
+      if (!response.ok) throw new Error("Image upload failed");
       const { url } = await response.json();
       return url;
     },
@@ -161,21 +163,21 @@ export const extensions = [
   Video.configure({
     upload: async (file: File) => {
       const formData = new FormData();
-      formData.append('file', file);
-      formData.append('type', 'video');
+      formData.append("file", file);
+      formData.append("type", "video");
 
-      const response = await fetch('/api/upload', {
-        method: 'POST',
+      const response = await fetch("/api/upload", {
+        method: "POST",
         body: formData,
       });
 
-      if (!response.ok) throw new Error('Video upload failed');
+      if (!response.ok) throw new Error("Video upload failed");
       const { url } = await response.json();
       return url;
     },
   }),
   ImageGif.configure({
-    GIPHY_API_KEY: process.env.NEXT_PUBLIC_GIPHY_API_KEY || '', // Add your Giphy API key in .env
+    GIPHY_API_KEY: process.env.NEXT_PUBLIC_GIPHY_API_KEY || "", // Add your Giphy API key in .env
   }),
   Blockquote,
   SlashCommand,
@@ -183,7 +185,7 @@ export const extensions = [
   Code.configure({
     toolbar: false,
   }),
-  CodeBlock.configure({ defaultTheme: 'dracula' }),
+  CodeBlock.configure({ defaultTheme: "dracula" }),
   ColumnActionButton,
   Table,
   Iframe,
@@ -204,15 +206,15 @@ export const extensions = [
   Attachment.configure({
     upload: async (file: any) => {
       const formData = new FormData();
-      formData.append('file', file);
-      formData.append('type', 'attachment');
+      formData.append("file", file);
+      formData.append("type", "attachment");
 
-      const response = await fetch('/api/upload', {
-        method: 'POST',
+      const response = await fetch("/api/upload", {
+        method: "POST",
         body: formData,
       });
 
-      if (!response.ok) throw new Error('Attachment upload failed');
+      if (!response.ok) throw new Error("Attachment upload failed");
       const { url } = await response.json();
       return url;
     },
@@ -220,15 +222,15 @@ export const extensions = [
   Mermaid.configure({
     upload: async (file: any) => {
       const formData = new FormData();
-      formData.append('file', file);
-      formData.append('type', 'mermaid');
+      formData.append("file", file);
+      formData.append("type", "mermaid");
 
-      const response = await fetch('/api/upload', {
-        method: 'POST',
+      const response = await fetch("/api/upload", {
+        method: "POST",
         body: formData,
       });
 
-      if (!response.ok) throw new Error('Mermaid upload failed');
+      if (!response.ok) throw new Error("Mermaid upload failed");
       const { url } = await response.json();
       return url;
     },

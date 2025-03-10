@@ -1,55 +1,73 @@
-// app/api/posts/[id]/route.ts
-import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { NextRequest, NextResponse } from "next/server";
+import { PrismaClient } from "@prisma/client";
 
-export async function GET(req: Request, { params }: { params: { id: string } }) {
+const prisma = new PrismaClient();
+
+// GET handler to fetch a post by ID
+export async function GET(request: NextRequest, { params }: any) {
   try {
+    const { id } = params;
+    console.log("API fetching post with id:", id); // Debug log
     const post = await prisma.post.findUnique({
-      where: { id: params.id },
+      where: { id },
+      include: {
+        media: true,
+        cardBlocks: {
+          orderBy: { position: "asc" },
+        },
+      },
     });
-    if (!post) return NextResponse.json({ error: 'Post not found' }, { status: 404 });
+    if (!post)
+      return NextResponse.json({ error: "Post not found" }, { status: 404 });
     return NextResponse.json(post);
   } catch (error) {
-    console.error('[POST_GET_ERROR]', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json(
+      { error: (error as Error).message },
+      { status: 500 }
+    );
   }
 }
 
-export async function PUT(req: Request, { params }: { params: { id: string } }) {
+// PUT handler to update a post by ID
+export async function PUT(request: NextRequest, { params }: any) {
   try {
-    const body = await req.json();
-    const { title, content, status } = body;
+    const { id } = params;
+    const { title, content, slug, excerpt, authorId, media, cardBlocks } =
+      await request.json();
 
-    // Optional: Validate status (not strictly necessary since Prisma will catch it)
-    const validStatuses = ['DRAFT', 'PUBLISHED', 'ARCHIVED'];
-    if (!validStatuses.includes(status)) {
-      return NextResponse.json({ error: 'Invalid status value' }, { status: 400 });
-    }
+    // Delete existing media and card blocks
+    await prisma.postMedia.deleteMany({ where: { postId: id } });
+    await prisma.postCardBlock.deleteMany({ where: { postId: id } });
 
     const post = await prisma.post.update({
-      where: { id: params.id },
+      where: { id },
       data: {
         title,
         content,
-        status,
-        updatedAt: new Date(),
+        slug,
+        excerpt,
+        authorId,
+        media: {
+          create: media.map((item: any) => ({
+            url: item.url,
+            type: item.type,
+          })),
+        },
+        cardBlocks: {
+          create: cardBlocks.map((item: any) => ({
+            cardId: item.cardId,
+            position: item.position,
+          })),
+        },
       },
     });
+
     return NextResponse.json(post);
   } catch (error) {
-    console.error('[POST_PUT_ERROR]', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
-  }
-}
-
-export async function DELETE(req: Request, { params }: { params: { id: string } }) {
-  try {
-    await prisma.post.delete({
-      where: { id: params.id },
-    });
-    return NextResponse.json({ message: 'Post deleted' });
-  } catch (error) {
-    console.error('[POST_DELETE_ERROR]', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    console.error("Error updating post:", error); // Debug log
+    return NextResponse.json(
+      { error: (error as Error).message },
+      { status: 500 }
+    );
   }
 }

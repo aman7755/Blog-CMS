@@ -1,12 +1,12 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { PenSquare, Eye, Trash2, Plus } from 'lucide-react';
-import { format } from 'date-fns';
-import { useToast } from '@/hooks/use-toast';
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PenSquare, Eye, Trash2, Plus } from "lucide-react";
+import { format } from "date-fns";
+import { useToast } from "@/hooks/use-toast";
 
 interface Post {
   id: string;
@@ -25,15 +25,15 @@ export default function PostsPage() {
   useEffect(() => {
     const fetchPosts = async () => {
       try {
-        const response = await fetch('/api/posts');
-        if (!response.ok) throw new Error('Failed to fetch posts');
+        const response = await fetch("/api/posts");
+        if (!response.ok) throw new Error("Failed to fetch posts");
         const data = await response.json();
         setPosts(data);
       } catch (error) {
         toast({
-          title: 'Error',
-          description: 'Failed to load posts',
-          variant: 'destructive',
+          title: "Error",
+          description: "Failed to load posts",
+          variant: "destructive",
         });
       } finally {
         setIsLoading(false);
@@ -44,31 +44,35 @@ export default function PostsPage() {
   }, [toast]);
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this post?')) return;
+    if (!confirm("Are you sure you want to delete this post?")) return;
     try {
-      const response = await fetch(`/api/posts/${id}`, { method: 'DELETE' });
-      if (!response.ok) throw new Error('Failed to delete post');
+      const response = await fetch(`/api/posts/${id}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      if (!response.ok) throw new Error("Failed to delete post");
       setPosts(posts.filter((post) => post.id !== id));
-      toast({ title: 'Success', description: 'Post deleted successfully' });
+      toast({ title: "Success", description: "Post deleted successfully" });
     } catch (error) {
       toast({
-        title: 'Error',
-        description: 'Failed to delete post',
-        variant: 'destructive',
+        title: "Error",
+        description: "Failed to delete post",
+        variant: "destructive",
       });
     }
   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'published':
-        return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100';
-      case 'draft':
-        return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100';
-      case 'archived':
-        return 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-100';
+      case "published":
+        return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100";
+      case "draft":
+        return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100";
+      case "archived":
+        return "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-100";
       default:
-        return 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-100';
+        return "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-100";
     }
   };
 
@@ -76,7 +80,7 @@ export default function PostsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">Posts</h1>
-        <Button onClick={() => router.push('/dashboard/posts/new')}>
+        <Button onClick={() => router.push("/dashboard/posts/new")}>
           <Plus className="h-4 w-4 mr-2" />
           New Post
         </Button>
@@ -105,7 +109,7 @@ export default function PostsPage() {
                     </span>
                     <span>•</span>
                     <span>
-                      Updated {format(new Date(post.updatedAt), 'MMM d, yyyy')}
+                      Updated {format(new Date(post.updatedAt), "MMM d, yyyy")}
                     </span>
                   </div>
                 </div>
@@ -113,7 +117,9 @@ export default function PostsPage() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={() => router.push(`/dashboard/posts/${post.id}/edit`)}
+                    onClick={() =>
+                      router.push(`/dashboard/posts/${post.id}/edit`)
+                    }
                   >
                     <PenSquare className="h-4 w-4" />
                   </Button>
@@ -145,7 +151,7 @@ export default function PostsPage() {
                 </p>
                 <Button
                   className="mt-4"
-                  onClick={() => router.push('/dashboard/posts/new')}
+                  onClick={() => router.push("/dashboard/posts/new")}
                 >
                   <Plus className="h-4 w-4 mr-2" />
                   Create Post

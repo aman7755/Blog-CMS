@@ -1,104 +1,153 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { useToast } from '@/hooks/use-toast';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import RichTextEditor from 'reactjs-tiptap-editor';
-import { extensions } from '@/components/editor';
+import { useState, useEffect, useRef } from "react";
+import { useRouter, useParams } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
+import { useSession } from "next-auth/react";
+import RichTextEditor from "reactjs-tiptap-editor";
+import { extensions } from "@/app/extensions";
+import TurndownService from "turndown";
 
-interface Post {
-  id: string;
-  title: string;
-  content: string;
-  status: string;
-  slug: string;
-}
-
-export default function EditPostPage({ params }: { params: { id: string } }) {
+export default function EditPostPage() {
   const router = useRouter();
+  const { id } = useParams();
   const { toast } = useToast();
-  const [post, setPost] = useState<Post | null>(null);
-  const [title, setTitle] = useState('');
-  const [content, setContent] = useState('');
-  const [status, setStatus] = useState('DRAFT'); // Default to uppercase
-  const [isLoading, setIsLoading] = useState(false);
+  const { data: session, status } = useSession();
+  const [title, setTitle] = useState("");
+  const [content, setContent] = useState("");
+  const [outputFormat, setOutputFormat] = useState("html");
+  const [isLoading, setIsLoading] = useState(true);
+  const editor = useRef(null);
+
+  const turndownService = new TurndownService();
+  turndownService.addRule("cardBlock", {
+    filter: (node: any) =>
+      node.nodeName === "DIV" &&
+      node.getAttribute("data-type") === "card-block",
+    replacement: (content: any, node: any) => {
+      const cardId = node.getAttribute("data-card-id");
+      return `[Card Block ID: ${cardId}]`;
+    },
+  });
 
   useEffect(() => {
     const fetchPost = async () => {
       try {
-        const response = await fetch(`/api/posts/${params.id}`);
-        if (!response.ok) throw new Error('Failed to fetch post');
-        const data = await response.json();
-        setPost(data);
-        setTitle(data.title);
-        setContent(data.content || '');
-        setStatus(data.status); // Will be DRAFT, PUBLISHED, or ARCHIVED
+        const response = await fetch(`/api/posts/${id}`);
+        if (!response.ok) throw new Error("Failed to fetch post");
+        const post = await response.json();
+        setTitle(post.title);
+        setContent(post.content); // Assuming content is stored as HTML
       } catch (error) {
         toast({
-          title: 'Error',
-          description: 'Failed to fetch post',
-          variant: 'destructive',
+          title: "Error",
+          description: "Failed to load post",
+          variant: "destructive",
         });
-        router.push('/dashboard/posts');
+      } finally {
+        setIsLoading(false);
       }
     };
 
-    fetchPost();
-  }, [params.id, router, toast]);
+    if (id) fetchPost();
+  }, [id, toast]);
+
+  const insertCardBlock = () => {
+    const cardId = prompt("Enter Card ID:");
+    if (cardId && editor.current) {
+      (editor.current as any).commands.insertCardBlock({ cardId, position: 0 });
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (status === "loading") return;
+    if (!(session?.user as any).id) {
+      toast({
+        title: "Error",
+        description: "You must be logged in to edit a post",
+        variant: "destructive",
+      });
+      router.push("/login");
+      return;
+    }
+
     setIsLoading(true);
 
     try {
-      const response = await fetch(`/api/posts/${params.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(content, "text/html");
+      const mediaElements = doc.querySelectorAll("img, video");
+      const cardBlocks = doc.querySelectorAll('div[data-type="card-block"]');
+
+      const media = Array.from(mediaElements).map((el: any) => ({
+        url: el.src,
+        type: el.tagName.toLowerCase() === "img" ? "image" : "video",
+      }));
+
+      const cardBlocksData = Array.from(cardBlocks).map((el, index) => ({
+        cardId: el.getAttribute("data-card-id"),
+        position: index,
+      }));
+
+      let cleanContent = content;
+      cardBlocks.forEach((el) => {
+        cleanContent = cleanContent.replace(
+          el.outerHTML,
+          `[Card Block ID: ${el.getAttribute("data-card-id")}]`
+        );
+      });
+
+      const response = await fetch(`/api/posts/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title,
-          content,
-          status, // Will be DRAFT, PUBLISHED, or ARCHIVED
+          content:
+            outputFormat === "markdown"
+              ? turndownService.turndown(cleanContent)
+              : cleanContent,
+          slug: title
+            .toLowerCase()
+            .replace(/[^\w\s]/g, "")
+            .replace(/\s+/g, "-"),
+          excerpt: cleanContent.replace(/<[^>]+>/g, "").substring(0, 160),
+          authorId: (session?.user as any).id,
+          media,
+          cardBlocks: cardBlocksData,
         }),
       });
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to update post');
-      }
-
+      if (!response.ok) throw new Error("Failed to update post");
+      toast({ title: "Success", description: "Post updated successfully" });
+      router.push("/dashboard/posts");
+    } catch (error) {
       toast({
-        title: 'Success',
-        description: 'Post updated successfully',
-      });
-      router.push('/dashboard/posts');
-    } catch (error: any) {
-      toast({
-        title: 'Error',
-        description: error.message || 'Failed to update post',
-        variant: 'destructive',
+        title: "Error",
+        description: (error as Error).message || "Failed to update post",
+        variant: "destructive",
       });
     } finally {
       setIsLoading(false);
     }
   };
 
-  if (!post) return null;
+  if (status === "loading" || isLoading) {
+    return <div>Loading...</div>;
+  }
+
+  const displayedContent =
+    outputFormat === "html" ? content : turndownService.turndown(content);
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">Edit Post</h1>
-        <Button onClick={() => router.push('/dashboard/posts')}>Cancel</Button>
+        <Button onClick={() => router.push("/dashboard/posts")}>Cancel</Button>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-8">
@@ -114,22 +163,28 @@ export default function EditPostPage({ params }: { params: { id: string } }) {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="status">Status</Label>
-          <Select value={status} onValueChange={setStatus}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="DRAFT">Draft</SelectItem>
-              <SelectItem value="PUBLISHED">Published</SelectItem>
-              <SelectItem value="ARCHIVED">Archived</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-2">
           <Label>Content</Label>
+          <div className="flex gap-4 mb-4">
+            <Button type="button" onClick={insertCardBlock}>
+              Insert Card Block
+            </Button>
+            <Button
+              type="button"
+              onClick={() => setOutputFormat("html")}
+              variant={outputFormat === "html" ? "default" : "outline"}
+            >
+              HTML
+            </Button>
+            <Button
+              type="button"
+              onClick={() => setOutputFormat("markdown")}
+              variant={outputFormat === "markdown" ? "default" : "outline"}
+            >
+              Markdown
+            </Button>
+          </div>
           <RichTextEditor
+            ref={editor}
             output="html"
             content={content}
             onChangeContent={(value) => setContent(value)}
@@ -139,9 +194,18 @@ export default function EditPostPage({ params }: { params: { id: string } }) {
           />
         </div>
 
+        {/* <div className="space-y-2">
+          <Label>Preview</Label>
+          <textarea
+            style={{ height: 200, width: "100%" }}
+            readOnly
+            value={displayedContent}
+          />
+        </div> */}
+
         <div className="flex justify-end space-x-4">
           <Button type="submit" disabled={isLoading}>
-            {isLoading ? 'Saving...' : 'Save Changes'}
+            {isLoading ? "Saving..." : "Save Post"}
           </Button>
         </div>
       </form>
