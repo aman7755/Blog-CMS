@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { writeFile, mkdir } from "fs/promises";
-import { join } from "path";
+import { uploadToS3 } from "@/lib/s3";
 
 // This replaces the old config export
 export const dynamic = "force-dynamic";
@@ -16,15 +15,11 @@ export async function POST(request: NextRequest) {
 
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
-
-    const dir = join(process.cwd(), "public", "uploads");
-    await mkdir(dir, { recursive: true });
-
+    
     const fileName = `${Date.now()}-${file.name}`;
-    const filePath = join(dir, fileName);
-    await writeFile(filePath, buffer as any);
+    const contentType = file.type || "application/octet-stream";
 
-    const url = `/uploads/${fileName}`;
+    const url = await uploadToS3(buffer, fileName, contentType);
     return NextResponse.json({ url });
   } catch (error) {
     console.error("Upload error:", error);
