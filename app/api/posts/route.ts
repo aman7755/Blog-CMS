@@ -1,7 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
-
 const prisma = new PrismaClient();
+
+// Helper function to add CORS headers to responses
+function corsHeaders(response: NextResponse) {
+  response.headers.set("Access-Control-Allow-Origin", "*"); // Or specific origin like 'http://localhost:4200'
+  response.headers.set(
+    "Access-Control-Allow-Methods",
+    "GET, POST, PUT, DELETE, OPTIONS"
+  );
+  response.headers.set(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization"
+  );
+  return response;
+}
+
+// Handle OPTIONS requests for CORS preflight
+export async function OPTIONS(request: NextRequest) {
+  return corsHeaders(new NextResponse(null, { status: 200 }));
+}
 
 // GET handler to fetch all posts
 export async function GET(request: NextRequest) {
@@ -15,18 +33,15 @@ export async function GET(request: NextRequest) {
         updatedAt: true,
       },
     });
-
     // Map Prisma enum values to lowercase for UI compatibility
     const mappedPosts = posts.map((post) => ({
       ...post,
       status: post.status.toLowerCase(),
     }));
-
-    return NextResponse.json(mappedPosts);
+    return corsHeaders(NextResponse.json(mappedPosts));
   } catch (error) {
-    return NextResponse.json(
-      { error: (error as Error).message },
-      { status: 500 }
+    return corsHeaders(
+      NextResponse.json({ error: (error as Error).message }, { status: 500 })
     );
   }
 }
@@ -36,7 +51,6 @@ export async function POST(request: NextRequest) {
   try {
     const { title, content, slug, excerpt, authorId, media, cardBlocks } =
       await request.json();
-
     const post = await prisma.post.create({
       data: {
         title,
@@ -58,12 +72,10 @@ export async function POST(request: NextRequest) {
         },
       },
     });
-
-    return NextResponse.json(post);
+    return corsHeaders(NextResponse.json(post));
   } catch (error) {
-    return NextResponse.json(
-      { error: (error as Error).message },
-      { status: 500 }
+    return corsHeaders(
+      NextResponse.json({ error: (error as Error).message }, { status: 500 })
     );
   }
 }
@@ -73,11 +85,9 @@ export async function PUT(request: NextRequest) {
   try {
     const { id, title, content, slug, excerpt, authorId, media, cardBlocks } =
       await request.json();
-
     // Delete existing media and card blocks
     await prisma.postMedia.deleteMany({ where: { postId: id } });
     await prisma.postCardBlock.deleteMany({ where: { postId: id } });
-
     const post = await prisma.post.update({
       where: { id },
       data: {
@@ -100,12 +110,10 @@ export async function PUT(request: NextRequest) {
         },
       },
     });
-
-    return NextResponse.json(post);
+    return corsHeaders(NextResponse.json(post));
   } catch (error) {
-    return NextResponse.json(
-      { error: (error as Error).message },
-      { status: 500 }
+    return corsHeaders(
+      NextResponse.json({ error: (error as Error).message }, { status: 500 })
     );
   }
 }
@@ -117,11 +125,10 @@ export async function DELETE(request: NextRequest) {
     const post = await prisma.post.delete({
       where: { id },
     });
-    return NextResponse.json(post);
+    return corsHeaders(NextResponse.json(post));
   } catch (error) {
-    return NextResponse.json(
-      { error: (error as Error).message },
-      { status: 500 }
+    return corsHeaders(
+      NextResponse.json({ error: (error as Error).message }, { status: 500 })
     );
   }
 }
