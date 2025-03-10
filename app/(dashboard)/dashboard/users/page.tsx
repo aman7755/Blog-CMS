@@ -1,11 +1,10 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { createClient } from '@/lib/supabase/client';
-import { UserPlus, Mail, Calendar } from 'lucide-react';
-import { format } from 'date-fns';
+import { useEffect, useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { UserPlus, Mail, Calendar } from "lucide-react";
+import { format } from "date-fns";
 
 interface Profile {
   id: string;
@@ -20,15 +19,6 @@ export default function UsersPage() {
 
   useEffect(() => {
     const fetchUsers = async () => {
-      const supabase = createClient();
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (!error && data) {
-        setUsers(data);
-      }
       setLoading(false);
     };
 
@@ -57,13 +47,15 @@ export default function UsersPage() {
                 className="flex items-center justify-between p-4 border rounded-lg"
               >
                 <div className="space-y-1">
-                  <p className="font-medium">{user.full_name || 'Unnamed User'}</p>
+                  <p className="font-medium">
+                    {user.full_name || "Unnamed User"}
+                  </p>
                   <div className="flex items-center text-sm text-muted-foreground">
                     <Mail className="h-4 w-4 mr-1" />
                     <span className="mr-4">{user.role}</span>
                     <Calendar className="h-4 w-4 mr-1" />
                     <span>
-                      Joined {format(new Date(user.created_at), 'MMM d, yyyy')}
+                      Joined {format(new Date(user.created_at), "MMM d, yyyy")}
                     </span>
                   </div>
                 </div>
