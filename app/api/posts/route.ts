@@ -31,12 +31,20 @@ export async function GET(request: NextRequest) {
         status: true,
         createdAt: true,
         updatedAt: true,
+        media: {
+          select: {
+            url: true,
+            type: true
+          }
+        }
       },
     });
     // Map Prisma enum values to lowercase for UI compatibility
     const mappedPosts = posts.map((post) => ({
       ...post,
       status: post.status.toLowerCase(),
+      // Use first media item's URL as the featured image, or null if no media
+      featuredImage: post.media[0]?.url || null
     }));
     return corsHeaders(NextResponse.json(mappedPosts));
   } catch (error) {
