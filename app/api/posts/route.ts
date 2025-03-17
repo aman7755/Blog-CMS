@@ -59,6 +59,17 @@ export async function POST(request: NextRequest) {
   try {
     const { title, content, slug, excerpt, authorId, media, cardBlocks } =
       await request.json();
+    
+    console.log("API - POST - Creating new post with media:", media);
+    
+    // Log each image and its alt text
+    media.forEach((item: any, index: number) => {
+      if (item.type === "image") {
+        console.log(`API - Image ${index} - url: ${item.url.substring(0, 50)}...`);
+        console.log(`API - Image ${index} - alt: "${item.alt}"`);
+      }
+    });
+    
     const post = await prisma.post.create({
       data: {
         title,
@@ -67,10 +78,15 @@ export async function POST(request: NextRequest) {
         excerpt,
         authorId,
         media: {
-          create: media.map((item: any) => ({
-            url: item.url,
-            type: item.type,
-          })),
+          create: media.map((item: any) => {
+            const mediaItem = {
+              url: item.url,
+              type: item.type,
+              alt: item.alt || '',
+            };
+            console.log("API - Creating media item:", mediaItem);
+            return mediaItem;
+          }),
         },
         cardBlocks: {
           create: cardBlocks.map((item: any) => ({
@@ -108,6 +124,7 @@ export async function PUT(request: NextRequest) {
           create: media.map((item: any) => ({
             url: item.url,
             type: item.type,
+            alt: item.alt || '',
           })),
         },
         cardBlocks: {

@@ -68,6 +68,7 @@ export async function PUT(request: NextRequest, { params }: any) {
           create: media.map((item: any) => ({
             url: item.url,
             type: item.type,
+            alt: item.alt || '',
           })),
         },
         cardBlocks: {
@@ -81,6 +82,29 @@ export async function PUT(request: NextRequest, { params }: any) {
     return corsHeaders(NextResponse.json(post));
   } catch (error) {
     console.error("Error updating post:", error); // Debug log
+    return corsHeaders(
+      NextResponse.json({ error: (error as Error).message }, { status: 500 })
+    );
+  }
+}
+
+// DELETE handler to delete a post by ID
+export async function DELETE(request: NextRequest, { params }: any) {
+  try {
+    const { id } = params;
+    
+    // First delete related media and card blocks (should happen automatically with cascade)
+    await prisma.postMedia.deleteMany({ where: { postId: id } });
+    await prisma.postCardBlock.deleteMany({ where: { postId: id } });
+    
+    // Then delete the post
+    const post = await prisma.post.delete({
+      where: { id },
+    });
+    
+    return corsHeaders(NextResponse.json({ message: "Post deleted successfully" }));
+  } catch (error) {
+    console.error("Error deleting post:", error); // Debug log
     return corsHeaders(
       NextResponse.json({ error: (error as Error).message }, { status: 500 })
     );

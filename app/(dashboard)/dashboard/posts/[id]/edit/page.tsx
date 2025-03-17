@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useSession } from "next-auth/react";
 import RichTextEditor from "reactjs-tiptap-editor";
-import { extensions } from "@/app/extensions";
+import { extensions, injectAltText } from "@/app/extensions";
 import TurndownService from "turndown";
 
 export default function EditPostPage() {
@@ -23,6 +23,17 @@ export default function EditPostPage() {
   const editor = useRef(null);
 
   const turndownService = new TurndownService();
+  
+  // Custom rule for images to preserve alt text
+  turndownService.addRule('images', {
+    filter: 'img',
+    replacement: function (content: string, node: any) {
+      const alt = node.getAttribute('alt') || '';
+      const src = node.getAttribute('src');
+      return `![${alt}](${src})`;
+    }
+  });
+
   turndownService.addRule("cardBlock", {
     filter: (node: any) =>
       node.nodeName === "DIV" &&
@@ -41,6 +52,18 @@ export default function EditPostPage() {
         const post = await response.json();
         setTitle(post.title);
         setContent(post.content); // Assuming content is stored as HTML
+        
+        console.log("Edit page - loaded post with content:", post.content.substring(0, 200) + "...");
+        console.log("Edit page - post has media:", post.media);
+        
+        // Log each image and its alt text from the database
+        post.media.forEach((item: any, index: number) => {
+          if (item.type === "image") {
+            console.log(`Edit page - DB Image ${index} - url: ${item.url.substring(0, 50)}...`);
+            console.log(`Edit page - DB Image ${index} - alt: "${item.alt}"`);
+          }
+        });
+        
       } catch (error) {
         toast({
           title: "Error",
@@ -79,22 +102,43 @@ export default function EditPostPage() {
     setIsLoading(true);
 
     try {
+      console.log("Edit page - Starting post update process");
+      
+      // Process content to ensure alt tags are properly set
+      const processedContent = injectAltText(content);
+      console.log("Edit page - Content after alt text injection:", processedContent.substring(0, 200) + "...");
+      
       const parser = new DOMParser();
-      const doc = parser.parseFromString(content, "text/html");
+      const doc = parser.parseFromString(processedContent, "text/html");
       const mediaElements = doc.querySelectorAll("img, video");
+      console.log("Edit page - Found media elements:", mediaElements.length);
+      
+      // Debug each image's alt text in the editor
+      mediaElements.forEach((el: any, index) => {
+        if (el.tagName.toLowerCase() === "img") {
+          console.log(`Edit page - Image ${index} - src: ${el.src.substring(0, 50)}...`);
+          console.log(`Edit page - Image ${index} - alt: "${el.alt}"`);
+          console.log(`Edit page - Image ${index} - outerHTML: ${el.outerHTML}`);
+        }
+      });
+      
       const cardBlocks = doc.querySelectorAll('div[data-type="card-block"]');
 
-      const media = Array.from(mediaElements).map((el: any) => ({
-        url: el.src,
-        type: el.tagName.toLowerCase() === "img" ? "image" : "video",
-      }));
+      const media = Array.from(mediaElements).map((el: any) => {
+        const item = {
+          url: el.src,
+          type: el.tagName.toLowerCase() === "img" ? "image" : "video",
+          alt: el.tagName.toLowerCase() === "img" ? (el.alt || "") : "",
+        };
+        
+        if (el.tagName.toLowerCase() === "img") {
+          console.log("Edit page - Processing image for update:", item);
+        }
+        
+        return item;
+      });
 
-      const cardBlocksData = Array.from(cardBlocks).map((el, index) => ({
-        cardId: el.getAttribute("data-card-id"),
-        position: index,
-      }));
-
-      let cleanContent = content;
+      let cleanContent = processedContent;
       cardBlocks.forEach((el) => {
         cleanContent = cleanContent.replace(
           el.outerHTML,
@@ -114,11 +158,15 @@ export default function EditPostPage() {
           slug: title
             .toLowerCase()
             .replace(/[^\w\s]/g, "")
-            .replace(/\s+/g, "-"),
+            .replace(/\s+/g, "-")
+            + "-" + Date.now().toString().slice(-6),
           excerpt: cleanContent.replace(/<[^>]+>/g, "").substring(0, 160),
           authorId: (session?.user as any).id,
           media,
-          cardBlocks: cardBlocksData,
+          cardBlocks: Array.from(cardBlocks).map((el: Element, index: number) => ({
+            cardId: el.getAttribute("data-card-id"),
+            position: index,
+          })),
         }),
       });
 
@@ -187,7 +235,12 @@ export default function EditPostPage() {
             ref={editor}
             output="html"
             content={content}
-            onChangeContent={(value) => setContent(value)}
+            onChangeContent={(value) => {
+              // Process value to ensure alt tags are applied
+              const processedValue = injectAltText(value);
+              console.log("Edit page - Content updated with alt text injection");
+              setContent(processedValue);
+            }}
             extensions={extensions}
             dark={false}
             disabled={isLoading}

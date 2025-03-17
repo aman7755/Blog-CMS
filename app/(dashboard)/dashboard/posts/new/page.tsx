@@ -9,6 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useSession } from "next-auth/react";
 import dynamic from "next/dynamic";
 import TurndownService from "turndown";
+import { injectAltText } from "@/app/extensions";
 
 // Dynamically import RichTextEditor
 const RichTextEditor = dynamic(() => import("reactjs-tiptap-editor"), {
@@ -33,6 +34,16 @@ export default function NewPostPage() {
       setExtensions(mod.extensions);
     });
   }, []);
+
+  // Custom rule for images to preserve alt text
+  turndownService.addRule('images', {
+    filter: 'img',
+    replacement: function (content: string, node: any) {
+      const alt = node.getAttribute('alt') || '';
+      const src = node.getAttribute('src');
+      return `![${alt}](${src})`;
+    }
+  });
 
   turndownService.addRule("cardBlock", {
     filter: (node: any) =>
@@ -66,26 +77,51 @@ export default function NewPostPage() {
 
     setIsLoading(true);
     try {
+      console.log("Starting post creation process");
       const slug = title
         .toLowerCase()
         .replace(/[^\w\s]/g, "")
-        .replace(/\s+/g, "-");
+        .replace(/\s+/g, "-") 
+        + "-" + Date.now().toString().slice(-6);
+      
+      // Process content to ensure alt tags are properly set
+      const processedContent = injectAltText(content);
+      console.log("Content after alt text injection:", processedContent);
+      
+      // Parse the content and extract media elements
       const parser = new DOMParser();
-      const doc = parser.parseFromString(content, "text/html");
+      
+      console.log("Content being parsed:", processedContent);
+      const doc = parser.parseFromString(processedContent, "text/html");
       const mediaElements = doc.querySelectorAll("img, video");
+      console.log("Found media elements:", mediaElements.length);
+      
+      // Debug each image's alt text
+      mediaElements.forEach((el: any, index) => {
+        if (el.tagName.toLowerCase() === "img") {
+          console.log(`Image ${index} - src: ${el.src.substring(0, 50)}...`);
+          console.log(`Image ${index} - alt: "${el.alt}"`);
+          console.log(`Image ${index} - outerHTML: ${el.outerHTML}`);
+        }
+      });
+      
       const cardBlocks = doc.querySelectorAll('div[data-type="card-block"]');
 
-      const media = Array.from(mediaElements).map((el: any) => ({
-        url: el.src,
-        type: el.tagName.toLowerCase() === "img" ? "image" : "video",
-      }));
+      const media = Array.from(mediaElements).map((el: any) => {
+        const item = {
+          url: el.src,
+          type: el.tagName.toLowerCase() === "img" ? "image" : "video",
+          alt: el.tagName.toLowerCase() === "img" ? (el.alt || "") : "",
+        };
+        
+        if (el.tagName.toLowerCase() === "img") {
+          console.log("Processing image for database save:", item);
+        }
+        
+        return item;
+      });
 
-      const cardBlocksData = Array.from(cardBlocks).map((el, index) => ({
-        cardId: el.getAttribute("data-card-id"),
-        position: index,
-      }));
-
-      let cleanContent = content;
+      let cleanContent = processedContent;
       cardBlocks.forEach((el) => {
         cleanContent = cleanContent.replace(
           el.outerHTML,
@@ -93,6 +129,10 @@ export default function NewPostPage() {
         );
       });
 
+      console.log("Final content to be saved:", outputFormat === "markdown" 
+        ? turndownService.turndown(cleanContent).substring(0, 200) + "..." 
+        : cleanContent.substring(0, 200) + "...");
+      
       const response = await fetch("/api/posts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -106,7 +146,10 @@ export default function NewPostPage() {
           excerpt: cleanContent.replace(/<[^>]+>/g, "").substring(0, 160),
           authorId: (session?.user as any).id,
           media,
-          cardBlocks: cardBlocksData,
+          cardBlocks: Array.from(cardBlocks).map((el: Element, index: number) => ({
+            cardId: el.getAttribute("data-card-id"),
+            position: index,
+          })),
         }),
       });
 
@@ -184,8 +227,13 @@ export default function NewPostPage() {
             ref={editor}
             output="html"
             content={content}
-            onChangeContent={(value) => setContent(value)}
-            extensions={extensions} // Use state-loaded extensions
+            onChangeContent={(value) => {
+              // Process value to ensure alt tags are applied
+              const processedValue = injectAltText(value);
+              console.log("Content updated with alt text injection");
+              setContent(processedValue);
+            }}
+            extensions={extensions} 
             dark={false}
             disabled={isLoading}
           />
