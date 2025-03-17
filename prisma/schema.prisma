@@ -27,9 +27,10 @@ model Post {
   authorId        String
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
-  metaDescription String?
   metaTitle       String?
-  FeaturedImage   FeaturedImage?
+  metaDescription String?
+  featureImage    String?
+  featureImageAlt String?
   author          User            @relation(fields: [authorId], references: [id])
   cardBlocks      PostCardBlock[]
   media           PostMedia[]
@@ -52,15 +53,6 @@ model PostCardBlock {
   position  Int
   createdAt DateTime @default(now())
   post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
-}
-
-model FeaturedImage {
-  id        String   @id
-  postId    String   @unique
-  url       String
-  alt       String?
-  createdAt DateTime @default(now())
-  Post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
 }
 
 enum PostStatus {

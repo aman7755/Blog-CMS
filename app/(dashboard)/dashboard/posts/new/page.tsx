@@ -5,11 +5,14 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useSession } from "next-auth/react";
 import dynamic from "next/dynamic";
 import TurndownService from "turndown";
 import { injectAltText } from "@/app/extensions";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import Image from "next/image";
 
 // Dynamically import RichTextEditor
 const RichTextEditor = dynamic(() => import("reactjs-tiptap-editor"), {
@@ -22,10 +25,15 @@ export default function NewPostPage() {
   const { data: session, status } = useSession();
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
+  const [metaTitle, setMetaTitle] = useState("");
+  const [metaDescription, setMetaDescription] = useState("");
+  const [featureImage, setFeatureImage] = useState("");
+  const [featureImageAlt, setFeatureImageAlt] = useState("");
   const [outputFormat, setOutputFormat] = useState("html");
   const [isLoading, setIsLoading] = useState(false);
   const [extensions, setExtensions] = useState<any[]>([]); // Store extensions client-side
   const editor = useRef(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const turndownService = new TurndownService();
 
   // Load extensions only on the client
@@ -62,6 +70,65 @@ export default function NewPostPage() {
     }
   };
 
+  const handleFeatureImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    
+    try {
+      // Use a local loading state just for the image upload
+      const imageUploadButton = document.getElementById('featureImageUploadBtn');
+      if (imageUploadButton) {
+        imageUploadButton.textContent = 'Uploading...';
+        imageUploadButton.setAttribute('disabled', 'true');
+      }
+      
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("type", "image");
+      
+      console.log("Uploading feature image:", file.name);
+
+      const response = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) throw new Error("Feature image upload failed");
+      const { url } = await response.json();
+      
+      console.log("Feature image uploaded successfully to:", url);
+      setFeatureImage(url);
+      // Use filename as default alt text
+      if (!featureImageAlt) {
+        setFeatureImageAlt(file.name.split('.')[0] || '');
+      }
+      
+      toast({
+        title: "Success",
+        description: "Feature image uploaded successfully",
+      });
+    } catch (error: unknown) {
+      console.error("Feature image upload error:", error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to upload feature image",
+        variant: "destructive",
+      });
+    } finally {
+      // Reset the button state
+      const imageUploadButton = document.getElementById('featureImageUploadBtn');
+      if (imageUploadButton) {
+        imageUploadButton.textContent = 'Upload Image';
+        imageUploadButton.removeAttribute('disabled');
+      }
+      
+      // Reset the file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (status === "loading") return;
@@ -83,6 +150,13 @@ export default function NewPostPage() {
         .replace(/[^\w\s]/g, "")
         .replace(/\s+/g, "-") 
         + "-" + Date.now().toString().slice(-6);
+      
+      console.log("New post - Sending SEO data:", {
+        metaTitle,
+        metaDescription,
+        featureImage: featureImage ? featureImage.substring(0, 50) + "..." : null,
+        featureImageAlt
+      });
       
       // Process content to ensure alt tags are properly set
       const processedContent = injectAltText(content);
@@ -138,6 +212,10 @@ export default function NewPostPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title,
+          metaTitle: metaTitle || title,
+          metaDescription: metaDescription || cleanContent.replace(/<[^>]+>/g, "").substring(0, 160),
+          featureImage,
+          featureImageAlt,
           content:
             outputFormat === "markdown"
               ? turndownService.turndown(cleanContent)
@@ -202,6 +280,92 @@ export default function NewPostPage() {
           />
         </div>
 
+        {/* SEO Section */}
+        <Card>
+          <CardHeader>
+            <CardTitle>SEO Settings</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="metaTitle">Meta Title (for SEO)</Label>
+              <Input
+                id="metaTitle"
+                value={metaTitle}
+                onChange={(e) => setMetaTitle(e.target.value)}
+                placeholder="Enter meta title (defaults to post title if empty)"
+              />
+              <p className="text-xs text-muted-foreground">
+                {metaTitle.length} / 60 characters
+              </p>
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="metaDescription">Meta Description (for SEO)</Label>
+              <Textarea
+                id="metaDescription"
+                value={metaDescription}
+                onChange={(e) => setMetaDescription(e.target.value)}
+                placeholder="Enter meta description"
+                rows={3}
+              />
+              <p className="text-xs text-muted-foreground">
+                {metaDescription.length} / 160 characters
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="featureImage">Feature Image</Label>
+              
+              <div className="flex items-center gap-4">
+                <Button
+                  type="button"
+                  id="featureImageUploadBtn"
+                  onClick={() => fileInputRef.current?.click()}
+                  variant="outline"
+                >
+                  Upload Image
+                </Button>
+                <input
+                  type="file"
+                  id="featureImage"
+                  ref={fileInputRef}
+                  onChange={handleFeatureImageUpload}
+                  accept="image/*"
+                  className="hidden"
+                />
+                {featureImage && (
+                  <span className="text-sm text-muted-foreground">
+                    Image uploaded
+                  </span>
+                )}
+              </div>
+              
+              {featureImage && (
+                <div className="mt-4 space-y-4">
+                  <div className="relative aspect-video w-full max-w-md overflow-hidden rounded-lg border">
+                    <Image
+                      src={featureImage}
+                      alt={featureImageAlt}
+                      className="object-cover"
+                      fill
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="featureImageAlt">Image Alt Text</Label>
+                    <Input
+                      id="featureImageAlt"
+                      value={featureImageAlt}
+                      onChange={(e) => setFeatureImageAlt(e.target.value)}
+                      placeholder="Describe the image for accessibility"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
         <div className="space-y-2">
           <Label>Content</Label>
           <div className="flex gap-4 mb-4">
@@ -223,6 +387,9 @@ export default function NewPostPage() {
               Markdown
             </Button>
           </div>
+          <p className="text-sm text-muted-foreground mb-2">
+            <strong>Tip:</strong> Double-click on images to edit alt text
+          </p>
           <RichTextEditor
             ref={editor}
             output="html"

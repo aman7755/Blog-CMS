@@ -57,10 +57,23 @@ export async function GET(request: NextRequest) {
 // POST handler to create a new post
 export async function POST(request: NextRequest) {
   try {
-    const { title, content, slug, excerpt, authorId, media, cardBlocks } =
-      await request.json();
+    const { 
+      title, 
+      content, 
+      slug, 
+      excerpt, 
+      authorId, 
+      media, 
+      cardBlocks,
+      metaTitle,
+      metaDescription,
+      featureImage,
+      featureImageAlt 
+    } = await request.json();
     
     console.log("API - POST - Creating new post with media:", media);
+    console.log("API - POST - SEO data:", { metaTitle, metaDescription });
+    console.log("API - POST - Feature image:", featureImage);
     
     // Log each image and its alt text
     media.forEach((item: any, index: number) => {
@@ -77,6 +90,10 @@ export async function POST(request: NextRequest) {
         slug,
         excerpt,
         authorId,
+        metaTitle: metaTitle || title, // Use title as fallback
+        metaDescription: metaDescription || excerpt, // Use excerpt as fallback
+        featureImage: featureImage || null,
+        featureImageAlt: featureImageAlt || '',
         media: {
           create: media.map((item: any) => {
             const mediaItem = {

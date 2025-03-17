@@ -51,11 +51,27 @@ export async function GET(request: NextRequest, { params }: any) {
 export async function PUT(request: NextRequest, { params }: any) {
   try {
     const { id } = params;
-    const { title, content, slug, excerpt, authorId, media, cardBlocks } =
-      await request.json();
+    const { 
+      title, 
+      content, 
+      slug, 
+      excerpt, 
+      authorId, 
+      media, 
+      cardBlocks,
+      metaTitle,
+      metaDescription,
+      featureImage,
+      featureImageAlt
+    } = await request.json();
+    
+    console.log("API - PUT - Updating post with SEO data:", { metaTitle, metaDescription });
+    console.log("API - PUT - Feature image:", featureImage);
+    
     // Delete existing media and card blocks
     await prisma.postMedia.deleteMany({ where: { postId: id } });
     await prisma.postCardBlock.deleteMany({ where: { postId: id } });
+    
     const post = await prisma.post.update({
       where: { id },
       data: {
@@ -64,6 +80,10 @@ export async function PUT(request: NextRequest, { params }: any) {
         slug,
         excerpt,
         authorId,
+        metaTitle: metaTitle || title, // Use title as fallback
+        metaDescription: metaDescription || excerpt, // Use excerpt as fallback
+        featureImage: featureImage || null,
+        featureImageAlt: featureImageAlt || '',
         media: {
           create: media.map((item: any) => ({
             url: item.url,
