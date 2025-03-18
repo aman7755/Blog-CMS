@@ -8,12 +8,23 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useSession } from "next-auth/react";
-import { default as nextDynamic } from "next/dynamic";
+import nextDynamic from "next/dynamic";
 import TurndownService from "turndown";
 import { injectAltText } from "@/app/extensions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import Image from "next/image";
 import React from "react";
+
+// Define the props type for RichTextEditor (adjust based on library docs)
+interface RichTextEditorProps {
+  editorRef?: React.RefObject<any>;
+  output?: "html" | "markdown";
+  content: string;
+  onChangeContent: (value: string) => void;
+  extensions: any[];
+  dark?: boolean;
+  disabled?: boolean;
+}
 
 // Dynamically import RichTextEditor with SSR disabled
 const RichTextEditor = nextDynamic(
@@ -22,14 +33,18 @@ const RichTextEditor = nextDynamic(
       const Component = mod.default;
       return {
         // eslint-disable-next-line react/display-name
-        default: React.forwardRef((props: any, ref) => (
-          <Component {...props} editorRef={ref} />
-        )),
+        default: React.forwardRef<any, RichTextEditorProps>((props, ref) => {
+          // Ensure output is one of the required values
+          const safeProps = {
+            ...props,
+            output:
+              props.output === "markdown" ? "html" : props.output || "html",
+          };
+          return <Component {...safeProps} ref={ref} />;
+        }),
       };
     }),
-  {
-    ssr: false,
-  }
+  { ssr: false }
 );
 
 export default function NewPostPage() {
@@ -42,24 +57,22 @@ export default function NewPostPage() {
   const [metaDescription, setMetaDescription] = useState("");
   const [featureImage, setFeatureImage] = useState("");
   const [featureImageAlt, setFeatureImageAlt] = useState("");
-  const [outputFormat, setOutputFormat] = useState("html");
+  const [outputFormat, setOutputFormat] = useState<"html" | "markdown">("html");
   const [isLoading, setIsLoading] = useState(false);
   const [extensions, setExtensions] = useState<any[]>([]);
-  const editor = useRef<any>(null); // Type as any for flexibility with editor commands
+  const editor = useRef<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const turndownService = new TurndownService();
 
-  // Load extensions only on the client
   useEffect(() => {
     import("@/app/extensions").then((mod) => {
       setExtensions(mod.extensions);
     });
   }, []);
 
-  // Custom rule for images to preserve alt text
   turndownService.addRule("images", {
     filter: "img",
-    replacement: function (content: string, node: any) {
+    replacement: (content: string, node: any) => {
       const alt = node.getAttribute("alt") || "";
       const src = node.getAttribute("src");
       return `![${alt}](${src})`;
@@ -70,7 +83,7 @@ export default function NewPostPage() {
     filter: (node: any) =>
       node.nodeName === "DIV" &&
       node.getAttribute("data-type") === "card-block",
-    replacement: (content: any, node: any) => {
+    replacement: (_content: any, node: any) => {
       const cardId = node.getAttribute("data-card-id");
       return `[Card Block ID: ${cardId}]`;
     },
@@ -80,10 +93,7 @@ export default function NewPostPage() {
     if (typeof window !== "undefined" && editor.current) {
       const cardId = prompt("Enter Card ID:");
       if (cardId) {
-        (editor.current as any).commands.insertCardBlock({
-          cardId,
-          position: 0,
-        });
+        editor.current.commands.insertCardBlock({ cardId, position: 0 });
       }
     }
   };
@@ -154,7 +164,7 @@ export default function NewPostPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (status === "loading") return;
-    if (!(session?.user as any).id) {
+    if (!(session?.user as any)?.id) {
       toast({
         title: "Error",
         description: "You must be logged in to create a post",
@@ -247,7 +257,7 @@ export default function NewPostPage() {
               : cleanContent,
           slug,
           excerpt: cleanContent.replace(/<[^>]+>/g, "").substring(0, 160),
-          authorId: (session?.user as any).id,
+          authorId: (session?.user as any)?.id,
           media,
           cardBlocks: Array.from(cardBlocks).map(
             (el: Element, index: number) => ({
@@ -306,7 +316,6 @@ export default function NewPostPage() {
           />
         </div>
 
-        {/* SEO Section */}
         <Card>
           <CardHeader>
             <CardTitle>SEO Settings</CardTitle>
@@ -441,5 +450,5 @@ export default function NewPostPage() {
   );
 }
 
-// Force dynamic rendering to prevent prerendering issues with browser-specific APIs
+// Force dynamic rendering to prevent prerendering
 export const dynamic = "force-dynamic";
