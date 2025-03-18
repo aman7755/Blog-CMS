@@ -8,16 +8,29 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useSession } from "next-auth/react";
-import dynamic from "next/dynamic";
+import { default as nextDynamic } from "next/dynamic";
 import TurndownService from "turndown";
 import { injectAltText } from "@/app/extensions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import Image from "next/image";
+import React from "react";
 
-// Dynamically import RichTextEditor
-const RichTextEditor = dynamic(() => import("reactjs-tiptap-editor"), {
-  ssr: false,
-});
+// Dynamically import RichTextEditor with SSR disabled
+const RichTextEditor = nextDynamic(
+  () =>
+    import("reactjs-tiptap-editor").then((mod) => {
+      const Component = mod.default;
+      return {
+        // eslint-disable-next-line react/display-name
+        default: React.forwardRef((props: any, ref) => (
+          <Component {...props} editorRef={ref} />
+        )),
+      };
+    }),
+  {
+    ssr: false,
+  }
+);
 
 export default function NewPostPage() {
   const router = useRouter();
@@ -31,8 +44,8 @@ export default function NewPostPage() {
   const [featureImageAlt, setFeatureImageAlt] = useState("");
   const [outputFormat, setOutputFormat] = useState("html");
   const [isLoading, setIsLoading] = useState(false);
-  const [extensions, setExtensions] = useState<any[]>([]); // Store extensions client-side
-  const editor = useRef(null);
+  const [extensions, setExtensions] = useState<any[]>([]);
+  const editor = useRef<any>(null); // Type as any for flexibility with editor commands
   const fileInputRef = useRef<HTMLInputElement>(null);
   const turndownService = new TurndownService();
 
@@ -44,13 +57,13 @@ export default function NewPostPage() {
   }, []);
 
   // Custom rule for images to preserve alt text
-  turndownService.addRule('images', {
-    filter: 'img',
+  turndownService.addRule("images", {
+    filter: "img",
     replacement: function (content: string, node: any) {
-      const alt = node.getAttribute('alt') || '';
-      const src = node.getAttribute('src');
+      const alt = node.getAttribute("alt") || "";
+      const src = node.getAttribute("src");
       return `![${alt}](${src})`;
-    }
+    },
   });
 
   turndownService.addRule("cardBlock", {
@@ -64,28 +77,36 @@ export default function NewPostPage() {
   });
 
   const insertCardBlock = () => {
-    const cardId = prompt("Enter Card ID:");
-    if (cardId && editor.current) {
-      (editor.current as any).commands.insertCardBlock({ cardId, position: 0 });
+    if (typeof window !== "undefined" && editor.current) {
+      const cardId = prompt("Enter Card ID:");
+      if (cardId) {
+        (editor.current as any).commands.insertCardBlock({
+          cardId,
+          position: 0,
+        });
+      }
     }
   };
 
-  const handleFeatureImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFeatureImageUpload = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
     const file = event.target.files?.[0];
     if (!file) return;
-    
+
     try {
-      // Use a local loading state just for the image upload
-      const imageUploadButton = document.getElementById('featureImageUploadBtn');
+      const imageUploadButton = document.getElementById(
+        "featureImageUploadBtn"
+      );
       if (imageUploadButton) {
-        imageUploadButton.textContent = 'Uploading...';
-        imageUploadButton.setAttribute('disabled', 'true');
+        imageUploadButton.textContent = "Uploading...";
+        imageUploadButton.setAttribute("disabled", "true");
       }
-      
+
       const formData = new FormData();
       formData.append("file", file);
       formData.append("type", "image");
-      
+
       console.log("Uploading feature image:", file.name);
 
       const response = await fetch("/api/upload", {
@@ -95,14 +116,13 @@ export default function NewPostPage() {
 
       if (!response.ok) throw new Error("Feature image upload failed");
       const { url } = await response.json();
-      
+
       console.log("Feature image uploaded successfully to:", url);
       setFeatureImage(url);
-      // Use filename as default alt text
       if (!featureImageAlt) {
-        setFeatureImageAlt(file.name.split('.')[0] || '');
+        setFeatureImageAlt(file.name.split(".")[0] || "");
       }
-      
+
       toast({
         title: "Success",
         description: "Feature image uploaded successfully",
@@ -111,20 +131,22 @@ export default function NewPostPage() {
       console.error("Feature image upload error:", error);
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : "Failed to upload feature image",
+        description:
+          error instanceof Error
+            ? error.message
+            : "Failed to upload feature image",
         variant: "destructive",
       });
     } finally {
-      // Reset the button state
-      const imageUploadButton = document.getElementById('featureImageUploadBtn');
+      const imageUploadButton = document.getElementById(
+        "featureImageUploadBtn"
+      );
       if (imageUploadButton) {
-        imageUploadButton.textContent = 'Upload Image';
-        imageUploadButton.removeAttribute('disabled');
+        imageUploadButton.textContent = "Upload Image";
+        imageUploadButton.removeAttribute("disabled");
       }
-      
-      // Reset the file input
       if (fileInputRef.current) {
-        fileInputRef.current.value = '';
+        fileInputRef.current.value = "";
       }
     }
   };
@@ -145,32 +167,32 @@ export default function NewPostPage() {
     setIsLoading(true);
     try {
       console.log("Starting post creation process");
-      const slug = title
-        .toLowerCase()
-        .replace(/[^\w\s]/g, "")
-        .replace(/\s+/g, "-") 
-        + "-" + Date.now().toString().slice(-6);
-      
+      const slug =
+        title
+          .toLowerCase()
+          .replace(/[^\w\s]/g, "")
+          .replace(/\s+/g, "-") +
+        "-" +
+        Date.now().toString().slice(-6);
+
       console.log("New post - Sending SEO data:", {
         metaTitle,
         metaDescription,
-        featureImage: featureImage ? featureImage.substring(0, 50) + "..." : null,
-        featureImageAlt
+        featureImage: featureImage
+          ? featureImage.substring(0, 50) + "..."
+          : null,
+        featureImageAlt,
       });
-      
-      // Process content to ensure alt tags are properly set
+
       const processedContent = injectAltText(content);
       console.log("Content after alt text injection:", processedContent);
-      
-      // Parse the content and extract media elements
+
       const parser = new DOMParser();
-      
       console.log("Content being parsed:", processedContent);
       const doc = parser.parseFromString(processedContent, "text/html");
       const mediaElements = doc.querySelectorAll("img, video");
       console.log("Found media elements:", mediaElements.length);
-      
-      // Debug each image's alt text
+
       mediaElements.forEach((el: any, index) => {
         if (el.tagName.toLowerCase() === "img") {
           console.log(`Image ${index} - src: ${el.src.substring(0, 50)}...`);
@@ -178,20 +200,18 @@ export default function NewPostPage() {
           console.log(`Image ${index} - outerHTML: ${el.outerHTML}`);
         }
       });
-      
+
       const cardBlocks = doc.querySelectorAll('div[data-type="card-block"]');
 
       const media = Array.from(mediaElements).map((el: any) => {
         const item = {
           url: el.src,
           type: el.tagName.toLowerCase() === "img" ? "image" : "video",
-          alt: el.tagName.toLowerCase() === "img" ? (el.alt || "") : "",
+          alt: el.tagName.toLowerCase() === "img" ? el.alt || "" : "",
         };
-        
         if (el.tagName.toLowerCase() === "img") {
           console.log("Processing image for database save:", item);
         }
-        
         return item;
       });
 
@@ -203,17 +223,22 @@ export default function NewPostPage() {
         );
       });
 
-      console.log("Final content to be saved:", outputFormat === "markdown" 
-        ? turndownService.turndown(cleanContent).substring(0, 200) + "..." 
-        : cleanContent.substring(0, 200) + "...");
-      
+      console.log(
+        "Final content to be saved:",
+        outputFormat === "markdown"
+          ? turndownService.turndown(cleanContent).substring(0, 200) + "..."
+          : cleanContent.substring(0, 200) + "..."
+      );
+
       const response = await fetch("/api/posts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title,
           metaTitle: metaTitle || title,
-          metaDescription: metaDescription || cleanContent.replace(/<[^>]+>/g, "").substring(0, 160),
+          metaDescription:
+            metaDescription ||
+            cleanContent.replace(/<[^>]+>/g, "").substring(0, 160),
           featureImage,
           featureImageAlt,
           content:
@@ -224,10 +249,12 @@ export default function NewPostPage() {
           excerpt: cleanContent.replace(/<[^>]+>/g, "").substring(0, 160),
           authorId: (session?.user as any).id,
           media,
-          cardBlocks: Array.from(cardBlocks).map((el: Element, index: number) => ({
-            cardId: el.getAttribute("data-card-id"),
-            position: index,
-          })),
+          cardBlocks: Array.from(cardBlocks).map(
+            (el: Element, index: number) => ({
+              cardId: el.getAttribute("data-card-id"),
+              position: index,
+            })
+          ),
         }),
       });
 
@@ -256,7 +283,6 @@ export default function NewPostPage() {
     return <div>Loading...</div>;
   }
 
-  // Show a loading state until extensions are loaded
   if (extensions.length === 0) {
     return <div>Loading editor...</div>;
   }
@@ -298,9 +324,11 @@ export default function NewPostPage() {
                 {metaTitle.length} / 60 characters
               </p>
             </div>
-            
+
             <div className="space-y-2">
-              <Label htmlFor="metaDescription">Meta Description (for SEO)</Label>
+              <Label htmlFor="metaDescription">
+                Meta Description (for SEO)
+              </Label>
               <Textarea
                 id="metaDescription"
                 value={metaDescription}
@@ -315,7 +343,6 @@ export default function NewPostPage() {
 
             <div className="space-y-2">
               <Label htmlFor="featureImage">Feature Image</Label>
-              
               <div className="flex items-center gap-4">
                 <Button
                   type="button"
@@ -339,7 +366,7 @@ export default function NewPostPage() {
                   </span>
                 )}
               </div>
-              
+
               {featureImage && (
                 <div className="mt-4 space-y-4">
                   <div className="relative aspect-video w-full max-w-md overflow-hidden rounded-lg border">
@@ -350,7 +377,6 @@ export default function NewPostPage() {
                       fill
                     />
                   </div>
-                  
                   <div className="space-y-2">
                     <Label htmlFor="featureImageAlt">Image Alt Text</Label>
                     <Input
@@ -391,16 +417,15 @@ export default function NewPostPage() {
             <strong>Tip:</strong> Double-click on images to edit alt text
           </p>
           <RichTextEditor
-            ref={editor}
+            editorRef={editor}
             output="html"
             content={content}
-            onChangeContent={(value) => {
-              // Process value to ensure alt tags are applied
+            onChangeContent={(value: string) => {
               const processedValue = injectAltText(value);
               console.log("Content updated with alt text injection");
               setContent(processedValue);
             }}
-            extensions={extensions} 
+            extensions={extensions}
             dark={false}
             disabled={isLoading}
           />
@@ -415,3 +440,6 @@ export default function NewPostPage() {
     </div>
   );
 }
+
+// Force dynamic rendering to prevent prerendering issues with browser-specific APIs
+export const dynamic = "force-dynamic";

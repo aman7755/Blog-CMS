@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
 
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
-    
+
     const fileName = `${Date.now()}-${file.name}`;
     const contentType = file.type || "application/octet-stream";
 
