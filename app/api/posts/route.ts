@@ -4,7 +4,7 @@ const prisma = new PrismaClient();
 
 // Helper function to add CORS headers to responses
 function corsHeaders(response: NextResponse) {
-  response.headers.set("Access-Control-Allow-Origin", "*"); // Or specific origin like 'http://localhost:4200'
+  response.headers.set("Access-Control-Allow-Origin", "*");
   response.headers.set(
     "Access-Control-Allow-Methods",
     "GET, POST, PUT, DELETE, OPTIONS"
@@ -31,20 +31,22 @@ export async function GET(request: NextRequest) {
         status: true,
         createdAt: true,
         updatedAt: true,
+        featureImageAlt: true,
+        featureImage: true,
         media: {
           select: {
             url: true,
-            type: true
-          }
-        }
+            type: true,
+          },
+        },
       },
     });
     // Map Prisma enum values to lowercase for UI compatibility
     const mappedPosts = posts.map((post) => ({
       ...post,
       status: post.status.toLowerCase(),
-      // Use first media item's URL as the featured image, or null if no media
-      featuredImage: post.media[0]?.url || null
+      featuredImage: post.featureImage || "",
+      featureImageAlt: post.featureImageAlt || "",
     }));
     return corsHeaders(NextResponse.json(mappedPosts));
   } catch (error) {
@@ -57,32 +59,34 @@ export async function GET(request: NextRequest) {
 // POST handler to create a new post
 export async function POST(request: NextRequest) {
   try {
-    const { 
-      title, 
-      content, 
-      slug, 
-      excerpt, 
-      authorId, 
-      media, 
+    const {
+      title,
+      content,
+      slug,
+      excerpt,
+      authorId,
+      media,
       cardBlocks,
       metaTitle,
       metaDescription,
       featureImage,
-      featureImageAlt 
+      featureImageAlt,
     } = await request.json();
-    
+
     console.log("API - POST - Creating new post with media:", media);
     console.log("API - POST - SEO data:", { metaTitle, metaDescription });
     console.log("API - POST - Feature image:", featureImage);
-    
+
     // Log each image and its alt text
     media.forEach((item: any, index: number) => {
       if (item.type === "image") {
-        console.log(`API - Image ${index} - url: ${item.url.substring(0, 50)}...`);
+        console.log(
+          `API - Image ${index} - url: ${item.url.substring(0, 50)}...`
+        );
         console.log(`API - Image ${index} - alt: "${item.alt}"`);
       }
     });
-    
+
     const post = await prisma.post.create({
       data: {
         title,
@@ -93,13 +97,13 @@ export async function POST(request: NextRequest) {
         metaTitle: metaTitle || title, // Use title as fallback
         metaDescription: metaDescription || excerpt, // Use excerpt as fallback
         featureImage: featureImage || null,
-        featureImageAlt: featureImageAlt || '',
+        featureImageAlt: featureImageAlt || "",
         media: {
           create: media.map((item: any) => {
             const mediaItem = {
               url: item.url,
               type: item.type,
-              alt: item.alt || '',
+              alt: item.alt || "",
             };
             console.log("API - Creating media item:", mediaItem);
             return mediaItem;
@@ -141,7 +145,7 @@ export async function PUT(request: NextRequest) {
           create: media.map((item: any) => ({
             url: item.url,
             type: item.type,
-            alt: item.alt || '',
+            alt: item.alt || "",
           })),
         },
         cardBlocks: {
