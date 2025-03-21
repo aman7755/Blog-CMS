@@ -61,12 +61,15 @@ const CardBlock = Node.create({
 
   addAttributes() {
     return {
-      cardId: {
+      packageId: {
         default: null,
       },
       position: {
-        default: 0, // We'll set this dynamically when saving
+        default: 0,
       },
+      packageData: {
+        default: null,
+      }
     };
   },
 
@@ -75,36 +78,97 @@ const CardBlock = Node.create({
       {
         tag: 'div[data-type="card-block"]',
         getAttrs: (dom) => ({
-          cardId: dom.getAttribute("data-card-id"),
+          packageId: dom.getAttribute("data-package-id"),
           position: parseInt(dom.getAttribute("data-position") || "0", 10),
+          packageData: dom.getAttribute("data-package-data") ? JSON.parse(dom.getAttribute("data-package-data")!) : null
         }),
       },
     ];
   },
 
   renderHTML({ node }) {
+    const packageData = node.attrs.packageData;
+    if (!packageData) {
+      return [
+        "div",
+        {
+          "data-type": "card-block",
+          "data-package-id": node.attrs.packageId,
+          "data-position": node.attrs.position,
+          class: "package-card-block",
+          style: "border: 1px dashed gray; padding: 10px; text-align: center;",
+        },
+        `Loading package data...`,
+      ];
+    }
+
+    // Create the card HTML structure
+    const cardHtml = `
+      <div class="package-card" style="border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; margin: 10px 0;">
+        <div class="package-header" style="padding: 15px; background: #f9fafb; border-bottom: 1px solid #e5e7eb;">
+          <h3 style="margin: 0; font-size: 1.25rem; color: #111827;">${packageData.name}</h3>
+          ${packageData.tag ? `<span style="display: inline-block; padding: 2px 8px; background: #e5e7eb; border-radius: 4px; font-size: 0.875rem; margin-top: 5px;">${packageData.tag}</span>` : ''}
+        </div>
+        <div class="package-content" style="padding: 15px;">
+          <div class="package-image" style="margin-bottom: 15px;">
+            <img src="${packageData.banner_image || packageData.image || '/placeholder.jpg'}" 
+                 alt="${packageData.name}"
+                 style="width: 100%; height: 200px; object-fit: cover; border-radius: 4px;">
+          </div>
+          <div class="package-details" style="font-size: 0.875rem; color: #4b5563;">
+            <p style="margin: 0 0 10px 0;">${atob(packageData.short_description)}</p>
+            <div class="package-meta" style="display: flex; gap: 15px; margin-top: 10px;">
+              ${packageData.duration ? `<span>${packageData.duration} Days</span>` : ''}
+              ${packageData.starting_price ? `<span>₹${packageData.starting_price.toLocaleString()}</span>` : ''}
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
     return [
       "div",
       {
         "data-type": "card-block",
-        "data-card-id": node.attrs.cardId,
+        "data-package-id": node.attrs.packageId,
         "data-position": node.attrs.position,
-        style: "border: 1px dashed gray; padding: 10px; text-align: center;",
+        "data-package-data": JSON.stringify(packageData),
+        class: "package-card-block",
       },
-      `Card Block (ID: ${node.attrs.cardId})`,
+      cardHtml,
     ];
   },
 
-  addCommands(): any {
+  addCommands() :any {
     return {
-      insertCardBlock:
-        (attrs: any) =>
-        ({ commands }: any) => {
-          return commands.insertContent({
-            type: this.name,
-            attrs,
+      insertPackageCard: (packageId: string) => ({ commands, editor }: { commands: any; editor: any }) => {
+        // Fetch package data
+        fetch(`https://staging.holidaytribe.com:3000/package/getPackageByIds/${packageId}`)
+          .then(response => response.json())
+          .then(data => {
+            if (data.status && data.result && data.result[0]) {
+              const packageData = data.result[0];
+              commands.insertContent({
+                type: this.name,
+                attrs: {
+                  packageId,
+                  packageData
+                }
+              });
+            }
+          })
+          .catch(error => {
+            console.error('Error fetching package data:', error);
+            // Insert a placeholder card with error state
+            commands.insertContent({
+              type: this.name,
+              attrs: {
+                packageId,
+                packageData: null
+              }
+            });
           });
-        },
+      },
     };
   },
 });

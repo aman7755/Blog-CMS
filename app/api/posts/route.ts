@@ -71,11 +71,13 @@ export async function POST(request: NextRequest) {
       metaDescription,
       featureImage,
       featureImageAlt,
+      packageIds,
     } = await request.json();
 
     console.log("API - POST - Creating new post with media:", media);
     console.log("API - POST - SEO data:", { metaTitle, metaDescription });
     console.log("API - POST - Feature image:", featureImage);
+    console.log("API - POST - Package IDs:", packageIds);
 
     // Log each image and its alt text
     media.forEach((item: any, index: number) => {
@@ -98,6 +100,7 @@ export async function POST(request: NextRequest) {
         metaDescription: metaDescription || excerpt, // Use excerpt as fallback
         featureImage: featureImage || null,
         featureImageAlt: featureImageAlt || "",
+        packageIds: packageIds || [],
         media: {
           create: media.map((item: any) => {
             const mediaItem = {
@@ -128,7 +131,7 @@ export async function POST(request: NextRequest) {
 // PUT handler to update an existing post
 export async function PUT(request: NextRequest) {
   try {
-    const { id, title, content, slug, excerpt, authorId, media, cardBlocks } =
+    const { id, title, content, slug, excerpt, authorId, media, cardBlocks, packageIds } =
       await request.json();
     // Delete existing media and card blocks
     await prisma.postMedia.deleteMany({ where: { postId: id } });
@@ -141,6 +144,7 @@ export async function PUT(request: NextRequest) {
         slug,
         excerpt,
         authorId,
+        packageIds: packageIds || [],
         media: {
           create: media.map((item: any) => ({
             url: item.url,

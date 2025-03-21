@@ -26,8 +26,12 @@ export default function EditPostPage() {
   const [featureImageAlt, setFeatureImageAlt] = useState("");
   const [outputFormat, setOutputFormat] = useState("html");
   const [isLoading, setIsLoading] = useState(true);
-  const editor = useRef(null);
+  const editor = useRef<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [packageIds, setPackageIds] = useState<string[]>([]);
+  const [packageInput, setPackageInput] = useState("");
+  const [packages, setPackages] = useState<any[]>([]);
+  const [isLoadingPackages, setIsLoadingPackages] = useState(false);
 
   const turndownService = new TurndownService();
 
@@ -79,6 +83,16 @@ export default function EditPostPage() {
           setFeatureImageAlt(post.featureImageAlt || "");
         } else {
           console.log("No feature image found in post data");
+        }
+
+        // Load saved package IDs if available
+        if (post.packageIds && Array.isArray(post.packageIds)) {
+          console.log("Loading saved package IDs:", post.packageIds);
+          setPackageIds(post.packageIds);
+          
+          // Fetch package data for each ID
+          const fetchPromises = post.packageIds.map((pkgId: string) => fetchPackage(pkgId));
+          await Promise.all(fetchPromises);
         }
 
         // Process content to ensure alt text is preserved from the database
@@ -372,6 +386,113 @@ export default function EditPostPage() {
     }
   };
 
+  const insertPackageCard = () => {
+    const packageId = prompt('Enter package ID:');
+    if (!packageId || !editor.current) return;
+    
+    // Create a horizontal scrollable container for cards
+    const containerHtml = `
+      <div style="overflow-x: auto; white-space: nowrap; margin: 20px 0; padding: 10px 0; width: 100%; -webkit-overflow-scrolling: touch;">
+        <div style="display: inline-flex; gap: 16px; padding: 0 4px;">
+          <!-- Package cards will be inserted here -->
+          <div style="display: inline-block; vertical-align: top; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); width: 280px; background: white;">
+            <div style="height: 180px; overflow: hidden; position: relative; background-color: #f3f4f6;">
+              <img src="/images/package.svg" alt="Package 1" style="width: 100%; height: 100%; object-fit: cover; display: block;">
+            </div>
+            <div style="padding: 16px 20px;">
+              <h3 style="margin: 0 0 8px 0; font-size: 16px; font-weight: 600; color: #111827; line-height: 1.3; white-space: normal;">
+                Family Fun: Universal Beyond
+              </h3>
+              <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; white-space: normal;">
+                <span style="display: inline-block; font-size: 12px; color: #4b5563;">Resorts</span>
+                <span style="display: inline-block; font-size: 12px; color: #4b5563;">•</span>
+                <span style="display: inline-block; font-size: 12px; color: #4b5563;">Clubs</span>
+                <span style="display: inline-block; font-size: 12px; color: #4b5563;">•</span>
+                <span style="display: inline-block; font-size: 12px; color: #4b5563;">Beach</span>
+              </div>
+              <div style="font-size: 13px; color: #6b7280; margin-bottom: 12px; white-space: normal;">
+                Weekend getaway
+              </div>
+              <div style="font-weight: 600; font-size: 14px; color: #111827; white-space: normal;">
+                From ₹29,000
+              </div>
+            </div>
+          </div>
+          
+          <div style="display: inline-block; vertical-align: top; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); width: 280px; background: white;">
+            <div style="height: 180px; overflow: hidden; position: relative; background-color: #f3f4f6;">
+              <img src="/images/package.svg" alt="Package 2" style="width: 100%; height: 100%; object-fit: cover; display: block;">
+            </div>
+            <div style="padding: 16px 20px;">
+              <h3 style="margin: 0 0 8px 0; font-size: 16px; font-weight: 600; color: #111827; line-height: 1.3; white-space: normal;">
+                Family Fun: Universal Beyond
+              </h3>
+              <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; white-space: normal;">
+                <span style="display: inline-block; font-size: 12px; color: #4b5563;">Resorts</span>
+                <span style="display: inline-block; font-size: 12px; color: #4b5563;">•</span>
+                <span style="display: inline-block; font-size: 12px; color: #4b5563;">Clubs</span>
+                <span style="display: inline-block; font-size: 12px; color: #4b5563;">•</span>
+                <span style="display: inline-block; font-size: 12px; color: #4b5563;">Beach</span>
+              </div>
+              <div style="font-size: 13px; color: #6b7280; margin-bottom: 12px; white-space: normal;">
+                Weekend getaway
+              </div>
+              <div style="font-weight: 600; font-size: 14px; color: #111827; white-space: normal;">
+                From ₹29,000
+              </div>
+            </div>
+          </div>
+          
+          <div style="display: inline-block; vertical-align: top; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); width: 280px; background: white;">
+            <div style="height: 180px; overflow: hidden; position: relative; background-color: #f3f4f6;">
+              <img src="/images/package.svg" alt="Package 3" style="width: 100%; height: 100%; object-fit: cover; display: block;">
+            </div>
+            <div style="padding: 16px 20px;">
+              <h3 style="margin: 0 0 8px 0; font-size: 16px; font-weight: 600; color: #111827; line-height: 1.3; white-space: normal;">
+                Family Fun: Universal Beyond
+              </h3>
+              <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; white-space: normal;">
+                <span style="display: inline-block; font-size: 12px; color: #4b5563;">Resorts</span>
+                <span style="display: inline-block; font-size: 12px; color: #4b5563;">•</span>
+                <span style="display: inline-block; font-size: 12px; color: #4b5563;">Clubs</span>
+                <span style="display: inline-block; font-size: 12px; color: #4b5563;">•</span>
+                <span style="display: inline-block; font-size: 12px; color: #4b5563;">Beach</span>
+              </div>
+              <div style="font-size: 13px; color: #6b7280; margin-bottom: 12px; white-space: normal;">
+                Weekend getaway
+              </div>
+              <div style="font-weight: 600; font-size: 14px; color: #111827; white-space: normal;">
+                From ₹29,000
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    
+    // Insert the horizontal scrollable container with cards
+    editor.current.editor?.commands.insertContent(containerHtml);
+    
+    // We'll only fetch data if we need dynamic data - for now using static example
+    // Uncomment this if you want to fetch and display dynamic data
+    /*
+    // Fetch package data
+    fetch(`https://staging.holidaytribe.com:3000/package/getPackageByIds/${packageId}`)
+      .then(response => response.json())
+      .then(data => {
+        if (data.status && data.result && data.result[0]) {
+          const packageData = data.result[0];
+          console.log("Package data received:", packageData);
+          
+          // Would update the container with dynamic data here
+        }
+      })
+      .catch(error => {
+        console.error('Error fetching package data:', error);
+      });
+    */
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -406,6 +527,8 @@ export default function EditPostPage() {
           : null,
         featureImageAlt,
       });
+
+      console.log("Edit page - Sending package IDs:", packageIds);
 
       const parser = new DOMParser();
       const doc = parser.parseFromString(processedContent, "text/html");
@@ -460,6 +583,7 @@ export default function EditPostPage() {
             cleanContent.replace(/<[^>]+>/g, "").substring(0, 160),
           featureImage,
           featureImageAlt,
+          packageIds,
           content:
             outputFormat === "markdown"
               ? turndownService.turndown(cleanContent)
@@ -566,6 +690,107 @@ export default function EditPostPage() {
     }
   };
 
+  const fetchPackage = async (packageId: string) => {
+    try {
+      setIsLoadingPackages(true);
+      const response = await fetch(`https://staging.holidaytribe.com:3000/package/getPackageByIds/${packageId}`);
+      if (!response.ok) throw new Error("Failed to fetch package");
+      
+      const data = await response.json();
+      if (data.status && data.result && data.result[0]) {
+        console.log("Package fetched successfully:", data.result[0]);
+        // Add to packages list if not already present
+        setPackages(prev => {
+          if (prev.some(p => p.id === data.result[0].id)) {
+            return prev;
+          }
+          return [...prev, data.result[0]];
+        });
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error("Error fetching package:", error);
+      toast({
+        title: "Error",
+        description: "Failed to fetch package data",
+        variant: "destructive",
+      });
+      return false;
+    } finally {
+      setIsLoadingPackages(false);
+    }
+  };
+
+  const addPackage = async () => {
+    if (!packageInput.trim()) return;
+    
+    // Check if already added
+    if (packageIds.includes(packageInput)) {
+      toast({
+        title: "Already added",
+        description: "This package ID is already in the list",
+      });
+      return;
+    }
+    
+    const success = await fetchPackage(packageInput);
+    if (success) {
+      setPackageIds(prev => [...prev, packageInput]);
+      setPackageInput("");
+    }
+  };
+
+  const removePackage = (packageId: string) => {
+    setPackageIds(prev => prev.filter(id => id !== packageId));
+    setPackages(prev => prev.filter(p => p.id !== packageId));
+  };
+
+  const insertPackagesIntoContent = () => {
+    if (!editor.current || packages.length === 0) return;
+    
+    // Create HTML for all packages in a horizontal scrollable container
+    const packagesHtml = `
+      <div style="overflow-x: auto; white-space: nowrap; margin: 20px 0; padding: 10px 0; width: 100%; -webkit-overflow-scrolling: touch;">
+        <div style="display: inline-flex; gap: 16px; padding: 0 4px;">
+          ${packages.map(pkg => `
+            <div style="display: inline-block; vertical-align: top; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); width: 280px; background: white;">
+              <div style="height: 180px; overflow: hidden; position: relative; background-color: #f3f4f6;">
+                <img src="/images/package.svg" alt="${pkg.name}" style="width: 100%; height: 100%; object-fit: cover; display: block;">
+              </div>
+              <div style="padding: 16px 20px;">
+                <h3 style="margin: 0 0 8px 0; font-size: 16px; font-weight: 600; color: #111827; line-height: 1.3; white-space: normal;">
+                  ${pkg.name}
+                </h3>
+                <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; white-space: normal;">
+                  <span style="display: inline-block; font-size: 12px; color: #4b5563;">Resorts</span>
+                  <span style="display: inline-block; font-size: 12px; color: #4b5563;">•</span>
+                  <span style="display: inline-block; font-size: 12px; color: #4b5563;">Clubs</span>
+                  <span style="display: inline-block; font-size: 12px; color: #4b5563;">•</span>
+                  <span style="display: inline-block; font-size: 12px; color: #4b5563;">Beach</span>
+                </div>
+                <div style="font-size: 13px; color: #6b7280; margin-bottom: 12px; white-space: normal;">
+                  Weekend getaway
+                </div>
+                <div style="font-weight: 600; font-size: 14px; color: #111827; white-space: normal;">
+                  From ₹${pkg.starting_price ? pkg.starting_price.toLocaleString() : '29,000'}
+                </div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+    
+    // Insert the content at cursor position
+    editor.current.editor?.commands.insertContent(packagesHtml);
+    
+    toast({
+      title: "Success",
+      description: "Packages inserted into content",
+    });
+  };
+
   if (status === "loading" || isLoading) {
     return <div>Loading...</div>;
   }
@@ -637,7 +862,6 @@ export default function EditPostPage() {
 
             <div className="space-y-2">
               <Label htmlFor="featureImage">Feature Image</Label>
-
               <div className="flex items-center gap-4">
                 <Button
                   type="button"
@@ -688,12 +912,91 @@ export default function EditPostPage() {
           </CardContent>
         </Card>
 
+        {/* Packages Section - MOVED HERE */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Holiday Packages</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex gap-2">
+              <Input
+                placeholder="Enter package ID"
+                value={packageInput}
+                onChange={(e) => setPackageInput(e.target.value)}
+              />
+              <Button 
+                type="button" 
+                onClick={addPackage}
+                disabled={isLoadingPackages}
+              >
+                {isLoadingPackages ? "Loading..." : "Add Package"}
+              </Button>
+            </div>
+            
+            {packageIds.length > 0 && (
+              <>
+                <div className="flex flex-wrap gap-2 mt-4">
+                  {packageIds.map(id => (
+                    <div key={id} className="flex items-center gap-1 bg-muted px-3 py-1 rounded-full">
+                      <span>{id}</span>
+                      <button 
+                        type="button" 
+                        onClick={() => removePackage(id)}
+                        className="text-muted-foreground hover:text-destructive"
+                      >
+                        <span className="sr-only">Remove</span>
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                
+                {packages.length > 0 && (
+                  <>
+                    
+                    <div className="mt-6 overflow-x-auto pb-4">
+                      <div className="flex gap-4">
+                        {packages.map(pkg => (
+                          <div key={pkg.id} className="flex-none w-[280px] rounded-xl overflow-hidden shadow-md bg-white">
+                            <div className="h-[180px] bg-gray-100 relative">
+                              <img 
+                                src="/images/package.svg" 
+                                alt={pkg.name}
+                                className="w-full h-full object-cover"
+                              />
+                            </div>
+                            <div className="p-4">
+                              <h3 className="font-semibold text-gray-900 mb-2 line-clamp-2">
+                                {pkg.name}
+                              </h3>
+                              <div className="flex flex-wrap gap-1 text-xs text-gray-500 mb-2">
+                                <span>Resorts</span>
+                                <span>•</span>
+                                <span>Clubs</span>
+                                <span>•</span>
+                                <span>Beach</span>
+                              </div>
+                              <div className="text-sm text-gray-500 mb-3">
+                                Weekend getaway
+                              </div>
+                              <div className="font-semibold">
+                                From ₹{pkg.starting_price ? pkg.starting_price.toLocaleString() : '29,000'}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+          </CardContent>
+        </Card>
+
         <div className="space-y-2">
           <Label>Content</Label>
           <div className="flex gap-4 mb-4">
-            <Button type="button" onClick={insertCardBlock}>
-              Insert Card Block
-            </Button>
             <Button
               type="button"
               onClick={() => setOutputFormat("html")}
@@ -730,147 +1033,12 @@ export default function EditPostPage() {
                 );
                 setContent(processedValue);
               }}
-              // immediatelyRender={false}
-              // onCreate={({ editor: editorInstance }: { editor: any }) => {
-              //   console.log("Editor created - forcing alt text preservation");
-
-              //   // Force alt text to be preserved on initialization
-              //   const forceAltText = () => {
-              //     try {
-              //       const domParser = new DOMParser();
-              //       const doc = domParser.parseFromString(content, "text/html");
-              //       const images = doc.querySelectorAll("img");
-
-              //       // Process each image to ensure alt text is preserved
-              //       images.forEach((img, index) => {
-              //         if (img.alt) {
-              //           console.log(
-              //             `Setting alt text on image ${index} in editor to: "${img.alt}"`
-              //           );
-
-              //           let found = false;
-              //           editorInstance.state.doc.descendants(
-              //             (node: any, pos: any) => {
-              //               if (
-              //                 node.type.name === "image" &&
-              //                 node.attrs.src === img.src
-              //               ) {
-              //                 // Update the node with correct alt text
-              //                 editorInstance.commands.command(({ tr }: any) => {
-              //                   tr.setNodeMarkup(pos, undefined, {
-              //                     ...node.attrs,
-              //                     alt: img.alt,
-              //                   });
-              //                   return true;
-              //                 });
-              //                 found = true;
-              //                 return true;
-              //               }
-              //               return false;
-              //             }
-              //           );
-
-              //           if (!found) {
-              //             console.log(
-              //               `Could not find image node for ${img.src} - trying direct DOM update`
-              //             );
-              //             // Direct DOM manipulation as fallback
-              //             setTimeout(() => {
-              //               const editorImgs =
-              //                 document.querySelectorAll(".ProseMirror img");
-              //               editorImgs.forEach((editorImg: any) => {
-              //                 if (editorImg.src === img.src) {
-              //                   console.log(
-              //                     `Direct DOM update of alt text for ${img.src}`
-              //                   );
-              //                   editorImg.setAttribute("alt", img.alt);
-
-              //                   // Also update badge if it exists
-              //                   const container =
-              //                     editorImg.closest(".image-container");
-              //                   if (container) {
-              //                     const badge = container.querySelector(
-              //                       ".image-alt-badge"
-              //                     ) as any;
-              //                     if (badge) {
-              //                       badge.textContent = "ALT";
-              //                       badge.style.backgroundColor = "#4b5563";
-              //                     }
-              //                   }
-              //                 }
-              //               });
-              //             }, 200);
-              //           }
-              //         }
-              //       });
-
-              //       // Run again after a bit to catch any late renders
-              //       setTimeout(() => {
-              //         const editorImgs =
-              //           document.querySelectorAll(".ProseMirror img");
-              //         console.log(
-              //           `Found ${editorImgs.length} images in editor after delay`
-              //         );
-
-              //         // Direct badge update for all images that have alt text
-              //         editorImgs.forEach((editorImg: any) => {
-              //           if (editorImg.alt && editorImg.alt.trim() !== "") {
-              //             console.log(
-              //               `Direct badge update for image with alt: "${editorImg.alt}"`
-              //             );
-
-              //             // Find and update the badge
-              //             const container =
-              //               editorImg.closest(".image-container");
-              //             if (container) {
-              //               const badge =
-              //                 container.querySelector(".image-alt-badge");
-              //               if (badge) {
-              //                 badge.textContent = "ALT";
-              //                 (badge as any).style.backgroundColor = "#4b5563";
-              //               }
-              //             } else {
-              //               // If there's no container, the badge might be adjacent
-              //               const nextElement = editorImg.nextElementSibling;
-              //               if (
-              //                 nextElement &&
-              //                 nextElement.classList.contains("image-alt-badge")
-              //               ) {
-              //                 nextElement.textContent = "ALT";
-              //                 (nextElement as any).style.backgroundColor =
-              //                   "#4b5563";
-              //               }
-              //             }
-              //           }
-              //         });
-              //       }, 1000);
-              //     } catch (error) {
-              //       console.error(
-              //         "Error preserving alt text on editor init:",
-              //         error
-              //       );
-              //     }
-              //   };
-
-              //   // Run immediately and again after a delay
-              //   forceAltText();
-              //   setTimeout(forceAltText, 500);
-              // }}
               extensions={extensions}
               dark={false}
               disabled={isLoading}
             />
           </div>
         </div>
-
-        {/* <div className="space-y-2">
-          <Label>Preview</Label>
-          <textarea
-            style={{ height: 200, width: "100%" }}
-            readOnly
-            value={displayedContent}
-          />
-        </div> */}
 
         <div className="flex justify-end space-x-4">
           <Button type="submit" disabled={isLoading}>

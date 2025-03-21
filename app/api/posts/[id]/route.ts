@@ -62,11 +62,13 @@ export async function PUT(request: NextRequest, { params }: any) {
       metaTitle,
       metaDescription,
       featureImage,
-      featureImageAlt
+      featureImageAlt,
+      packageIds
     } = await request.json();
     
     console.log("API - PUT - Updating post with SEO data:", { metaTitle, metaDescription });
     console.log("API - PUT - Feature image:", featureImage);
+    console.log("API - PUT - Package IDs:", packageIds);
     
     // Delete existing media and card blocks
     await prisma.postMedia.deleteMany({ where: { postId: id } });
@@ -84,6 +86,7 @@ export async function PUT(request: NextRequest, { params }: any) {
         metaDescription: metaDescription || excerpt, // Use excerpt as fallback
         featureImage: featureImage || null,
         featureImageAlt: featureImageAlt || '',
+        packageIds: packageIds || [],
         media: {
           create: media.map((item: any) => ({
             url: item.url,

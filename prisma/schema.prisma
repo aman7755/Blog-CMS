@@ -31,6 +31,7 @@ model Post {
   metaDescription String?
   featureImage    String?
   featureImageAlt String?
+  packageIds      String[]        @default([])
   author          User            @relation(fields: [authorId], references: [id])
   cardBlocks      PostCardBlock[]
   media           PostMedia[]
