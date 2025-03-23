@@ -24,6 +24,7 @@ import {
   PieChart,
   Pie,
   Cell,
+  Legend
 } from 'recharts';
 import { useRouter } from 'next/navigation';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -112,7 +113,7 @@ function DashboardContent() {
     { name: 'Draft', value: analytics.posts.byStatus.draft },
     { name: 'Published', value: analytics.posts.byStatus.published },
     { name: 'Archived', value: analytics.posts.byStatus.archived },
-  ] : [];
+  ].filter(item => item.value > 0) : []; // Only show statuses with values > 0
 
   const userRoleData = analytics ? [
     { name: 'Admin', value: analytics.users.byRole.admin },
@@ -279,19 +280,37 @@ function DashboardContent() {
                     data={postStatusData}
                     cx="50%"
                     cy="50%"
-                    innerRadius={60}
-                    outerRadius={80}
+                    innerRadius={40}
+                    outerRadius={70}
                     fill="#8884d8"
-                    paddingAngle={2}
+                    paddingAngle={5}
                     dataKey="value"
-                    label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                    nameKey="name"
+                    label={false}
                     labelLine={false}
                   >
                     {postStatusData.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                     ))}
                   </Pie>
-                  <Tooltip />
+                  <Tooltip 
+                    formatter={(value, name) => [`${value} posts`, name]}
+                    contentStyle={{ 
+                      backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                      borderRadius: '6px',
+                      padding: '10px',
+                      boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)'
+                    }}
+                  />
+                  <Legend 
+                    layout="horizontal" 
+                    verticalAlign="bottom" 
+                    align="center"
+                    wrapperStyle={{
+                      paddingTop: '10px',
+                      fontSize: '12px'
+                    }}
+                  />
                 </PieChart>
               </ResponsiveContainer>
             )}
@@ -313,13 +332,42 @@ function DashboardContent() {
               <ResponsiveContainer width="100%" height="100%">
                 <RechartsBarChart
                   data={userRoleData}
-                  margin={{ top: 5, right: 30, left: 20, bottom: 30 }}
+                  margin={{ top: 20, right: 30, left: 10, bottom: 20 }}
+                  barSize={40}
                 >
-                  <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-                  <XAxis dataKey="name" />
-                  <YAxis />
-                  <Tooltip />
-                  <Bar dataKey="value" fill="#3b82f6" />
+                  <CartesianGrid strokeDasharray="3 3" opacity={0.2} vertical={false} />
+                  <XAxis 
+                    dataKey="name" 
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <YAxis 
+                    axisLine={false}
+                    tickLine={false}
+                    width={30}
+                  />
+                  <Tooltip 
+                    formatter={(value, name) => [`${value} users`, name]}
+                    contentStyle={{ 
+                      backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                      borderRadius: '6px',
+                      padding: '10px',
+                      boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)'
+                    }}
+                  />
+                  <Bar 
+                    dataKey="value" 
+                    radius={[4, 4, 0, 0]}
+                    label={{
+                      position: 'top',
+                      formatter: (value: number) => value > 0 ? value : '',
+                      style: { fontSize: '12px', fill: '#666' }
+                    }}
+                  >
+                    {userRoleData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Bar>
                 </RechartsBarChart>
               </ResponsiveContainer>
             )}
