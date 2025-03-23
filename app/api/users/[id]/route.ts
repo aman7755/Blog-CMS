@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { hash, compare } from "bcrypt";
 
 const prisma = new PrismaClient();
 
@@ -85,30 +86,55 @@ export async function PATCH(
 
     console.log("Update user - Session data:", JSON.stringify(session.user, null, 2));
 
-    // Check if admin role is in session
-    let isAdmin = session.user.role === "admin";
+    const body = await request.json();
+    const { name, role, isActive } = body;
     
-    // If no role in session, check database
-    if (!isAdmin) {
-      const currentUser = await prisma.user.findUnique({
-        where: { email: session.user.email },
+    // Get the user to update
+    const userToUpdate = await prisma.user.findUnique({
+      where: { id: params.id },
+    });
+
+    if (!userToUpdate) {
+      return corsHeaders(
+        NextResponse.json({ error: "User not found" }, { status: 404 })
+      );
+    }
+    
+    // Check if the user is updating their own profile or has admin privileges
+    const isOwnProfile = session.user.id === params.id;
+    const isAdmin = session.user.role === "admin";
+    
+    // If user is updating own profile, they can only update name
+    if (isOwnProfile) {
+      // Update only the name
+      const updatedUser = await prisma.user.update({
+        where: { id: params.id },
+        data: {
+          ...(name && { name }),
+        },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          isActive: true,
+          createdAt: true,
+        },
       });
       
-      console.log("Database user for admin check:", JSON.stringify(currentUser, null, 2));
-      isAdmin = currentUser?.role === "admin";
+      return corsHeaders(NextResponse.json(updatedUser));
     }
-
-    // Only admins can update users
+    
+    // If not the user's own profile, check if they have admin privileges
     if (!isAdmin) {
       return corsHeaders(
         NextResponse.json({ error: "Forbidden: Requires admin role" }, { status: 403 })
       );
     }
 
-    const body = await request.json();
-    const { role, isActive } = body;
-
-    // Validate input
+    // Admin-only validations below
+    
+    // Validate input for role updates
     if (role && !["admin", "editor", "author"].includes(role)) {
       return corsHeaders(
         NextResponse.json({ error: "Invalid role specified" }, { status: 400 })
@@ -118,17 +144,6 @@ export async function PATCH(
     if (isActive !== undefined && typeof isActive !== "boolean") {
       return corsHeaders(
         NextResponse.json({ error: "isActive must be a boolean" }, { status: 400 })
-      );
-    }
-
-    // Get the user to update
-    const userToUpdate = await prisma.user.findUnique({
-      where: { id: params.id },
-    });
-
-    if (!userToUpdate) {
-      return corsHeaders(
-        NextResponse.json({ error: "User not found" }, { status: 404 })
       );
     }
 
@@ -146,10 +161,11 @@ export async function PATCH(
       );
     }
 
-    // Update the user
+    // Admin can update all fields
     const updatedUser = await prisma.user.update({
       where: { id: params.id },
       data: {
+        ...(name && { name }),
         ...(role && { role }),
         ...(isActive !== undefined && { isActive }),
       },
