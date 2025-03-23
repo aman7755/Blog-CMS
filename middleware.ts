@@ -1,33 +1,70 @@
-import { NextResponse, type NextRequest } from 'next/server';
-import { getToken } from 'next-auth/jwt';
+import { withAuth } from "next-auth/middleware";
+import { NextResponse } from "next/server";
 
-export async function middleware(request: NextRequest) {
-  // Get the token from the request
-  const token = await getToken({
-    req: request,
-    secret: process.env.NEXTAUTH_SECRET,
-  });
-
-  const { pathname } = request.nextUrl;
-
-  // If there's no token and the user is trying to access a protected route
-  if (!token && pathname.startsWith('/dashboard')) {
-    return NextResponse.redirect(new URL('/login', request.url));
-  }
-
-  // If there's a token and the user is trying to access auth routes
-  if (token && (pathname === '/login' || pathname === '/')) {
-    return NextResponse.redirect(new URL('/dashboard', request.url));
-  }
-
-  // Allow the request to proceed
-  return NextResponse.next({
-    request: {
-      headers: request.headers,
+export default withAuth(
+  function middleware(req) {
+    const token = req.nextauth.token;
+    const pathname = req.nextUrl.pathname;
+    
+    // Check if user is inactive
+    if (token?.isActive === false) {
+      console.log("Access denied: Account is inactive");
+      
+      // If trying to access any protected route and account is inactive
+      if (pathname.startsWith("/dashboard")) {
+        return NextResponse.redirect(
+          new URL("/account-inactive", req.url)
+        );
+      }
+    }
+    
+    // Admin-only routes
+    const adminOnlyRoutes = [
+      "/dashboard/users",
+      "/dashboard/settings/site",
+    ];
+    
+    // Editor and admin routes (content management)
+    const editorRoutes = [
+      "/dashboard/posts/new",
+      "/dashboard/posts/edit",
+      "/dashboard/media",
+    ];
+    
+    // Check if path is admin-only
+    const isAdminRoute = adminOnlyRoutes.some(route => 
+      pathname.startsWith(route)
+    );
+    
+    // Check if path is editor-only
+    const isEditorRoute = editorRoutes.some(route => 
+      pathname.startsWith(route)
+    );
+    
+    // Role-based access control
+    const userRole = token?.role || "author";
+    
+    // If trying to access admin routes without being an admin, redirect to dashboard
+    if (isAdminRoute && userRole !== "admin") {
+      console.log("Access denied: Admin route accessed by", userRole);
+      return NextResponse.redirect(new URL("/dashboard", req.url));
+    }
+    
+    // If trying to access editor routes without sufficient permissions
+    if (isEditorRoute && userRole === "author") {
+      console.log("Access denied: Editor route accessed by author");
+      return NextResponse.redirect(new URL("/dashboard", req.url));
+    }
+    
+    // Allow the request to proceed
+    return NextResponse.next();
+  },
+  {
+    callbacks: {
+      authorized: ({ token }) => !!token, // Just check if user is authenticated
     },
-  });
-}
+  }
+);
 
-export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
-};
+// Protect all dashboard routes
+export const config = { matcher: ["/dashboard/:path*"] };

@@ -12,9 +12,21 @@ model User {
   email     String   @unique
   password  String
   name      String?
+  role      String   @default("author")
+  isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   posts     Post[]
+}
+
+model Invitation {
+  id         String    @id @default(uuid())
+  email      String    @unique
+  token      String    @unique
+  role       String    @default("author")
+  expiresAt  DateTime
+  createdAt  DateTime  @default(now())
+  used       Boolean   @default(false)
 }
 
 model Post {
@@ -39,12 +51,12 @@ model Post {
 
 model PostMedia {
   id        String   @id @default(uuid())
-  postId    String
+  postId    String?
   url       String
   type      String
   createdAt DateTime @default(now())
   alt       String?
-  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  post      Post?    @relation(fields: [postId], references: [id], onDelete: Cascade)
 }
 
 model PostCardBlock {

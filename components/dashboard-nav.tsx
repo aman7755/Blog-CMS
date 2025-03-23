@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/theme-toggle';
@@ -13,17 +13,46 @@ import {
   Settings,
   LogOut,
 } from 'lucide-react';
+import { useSession, signOut } from 'next-auth/react';
+import { useToast } from '@/hooks/use-toast';
 
-const navigation = [
+const getNavigation = (isAdmin = false) => [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Posts', href: '/dashboard/posts', icon: FileText },
   { name: 'Media', href: '/dashboard/media', icon: Image },
-  { name: 'Users', href: '/dashboard/users', icon: Users },
+  ...(isAdmin ? [{ name: 'Users', href: '/dashboard/users', icon: Users }] : []),
   { name: 'Settings', href: '/dashboard/settings', icon: Settings },
 ];
 
 export function DashboardNav() {
   const pathname = usePathname();
+  const { data: session } = useSession();
+  const router = useRouter();
+  const { toast } = useToast();
+  
+  const isAdmin = session?.user?.role === 'admin';
+  console.log('DashboardNav - Session:', {
+    hasUserData: !!session?.user,
+    email: session?.user?.email,
+    id: session?.user?.id,
+    role: session?.user?.role,
+    isActive: session?.user?.isActive
+  });
+  
+  const navigation = getNavigation(isAdmin);
+  
+  const handleSignOut = async () => {
+    try {
+      await signOut({ redirect: false });
+      toast({
+        title: 'Signed out',
+        description: 'You have been successfully signed out.'
+      });
+      router.push('/login');
+    } catch (error) {
+      console.error('Error signing out:', error);
+    }
+  };
 
   return (
     <nav className="border-b bg-card">
@@ -58,8 +87,23 @@ export function DashboardNav() {
             </div>
           </div>
           <div className="flex items-center space-x-4">
+            {session?.user && (
+              <div className="text-sm text-muted-foreground">
+                {session.user.email}
+                {isAdmin && (
+                  <span className="ml-2 text-xs bg-primary/10 text-primary px-2 py-1 rounded-full">
+                    Admin
+                  </span>
+                )}
+                {!isAdmin && session?.user?.role && (
+                  <span className="ml-2 text-xs bg-blue-500/10 text-blue-500 px-2 py-1 rounded-full">
+                    {session.user.role}
+                  </span>
+                )}
+              </div>
+            )}
             <ThemeToggle />
-            <Button variant="ghost" size="icon">
+            <Button variant="ghost" size="icon" onClick={handleSignOut}>
               <LogOut className="h-5 w-5" />
             </Button>
           </div>

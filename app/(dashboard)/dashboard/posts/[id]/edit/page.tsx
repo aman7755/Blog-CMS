@@ -12,8 +12,9 @@ import { extensions, injectAltText } from "@/app/extensions";
 import TurndownService from "turndown";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import Image from "next/image";
+import { RoleGate } from "@/components/role-gate";
 
-export default function EditPostPage() {
+function EditPostContent() {
   const router = useRouter();
   const { id } = useParams();
   const { toast } = useToast();
@@ -1047,5 +1048,13 @@ export default function EditPostPage() {
         </div>
       </form>
     </div>
+  );
+}
+
+export default function EditPostPage() {
+  return (
+    <RoleGate allowedRoles={['admin', 'editor']} requireActive={true}>
+      <EditPostContent />
+    </RoleGate>
   );
 }

@@ -588,9 +588,6 @@ export default function NewPostPage() {
         <div className="space-y-2">
           <Label>Content</Label>
           <div className="flex gap-4 mb-4">
-            <Button type="button" onClick={insertCardBlock}>
-              Insert Card Block
-            </Button>
             <Button
               type="button"
               onClick={() => setOutputFormat("html")}

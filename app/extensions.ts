@@ -161,14 +161,14 @@ const CardBlock = Node.create({
             console.error('Error fetching package data:', error);
             // Insert a placeholder card with error state
             commands.insertContent({
-              type: this.name,
+            type: this.name,
               attrs: {
                 packageId,
                 packageData: null
               }
             });
           });
-      },
+        },
     };
   },
 });

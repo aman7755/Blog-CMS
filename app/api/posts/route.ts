@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+
 const prisma = new PrismaClient();
 
 // Helper function to add CORS headers to responses
@@ -14,6 +17,37 @@ function corsHeaders(response: NextResponse) {
     "Content-Type, Authorization"
   );
   return response;
+}
+
+// Helper function to validate user session and role
+async function validateUserRole(allowedRoles: string[] = ['admin', 'editor']) {
+  const session = await getServerSession(authOptions);
+  
+  if (!session || !session.user) {
+    return { 
+      isAuthorized: false, 
+      error: "Unauthorized: You must be logged in", 
+      status: 401 
+    };
+  }
+  
+  if (!session.user.isActive) {
+    return { 
+      isAuthorized: false, 
+      error: "Unauthorized: Your account is inactive", 
+      status: 403 
+    };
+  }
+  
+  if (!session.user.role || !allowedRoles.includes(session.user.role)) {
+    return { 
+      isAuthorized: false, 
+      error: `Unauthorized: You need one of these roles: ${allowedRoles.join(', ')}`, 
+      status: 403 
+    };
+  }
+  
+  return { isAuthorized: true, userId: session.user.id };
 }
 
 // Handle OPTIONS requests for CORS preflight
@@ -59,6 +93,14 @@ export async function GET(request: NextRequest) {
 // POST handler to create a new post
 export async function POST(request: NextRequest) {
   try {
+    // Validate user role
+    const validation = await validateUserRole(['admin', 'editor']);
+    if (!validation.isAuthorized) {
+      return corsHeaders(
+        NextResponse.json({ error: validation.error }, { status: validation.status })
+      );
+    }
+
     const {
       title,
       content,
@@ -95,7 +137,7 @@ export async function POST(request: NextRequest) {
         content,
         slug,
         excerpt,
-        authorId,
+        authorId: authorId || validation.userId, // Use validated user ID if not provided
         metaTitle: metaTitle || title, // Use title as fallback
         metaDescription: metaDescription || excerpt, // Use excerpt as fallback
         featureImage: featureImage || null,
@@ -131,6 +173,14 @@ export async function POST(request: NextRequest) {
 // PUT handler to update an existing post
 export async function PUT(request: NextRequest) {
   try {
+    // Validate user role
+    const validation = await validateUserRole(['admin', 'editor']);
+    if (!validation.isAuthorized) {
+      return corsHeaders(
+        NextResponse.json({ error: validation.error }, { status: validation.status })
+      );
+    }
+
     const { id, title, content, slug, excerpt, authorId, media, cardBlocks, packageIds } =
       await request.json();
     // Delete existing media and card blocks
@@ -143,7 +193,7 @@ export async function PUT(request: NextRequest) {
         content,
         slug,
         excerpt,
-        authorId,
+        authorId: authorId || validation.userId, // Use validated user ID if not provided
         packageIds: packageIds || [],
         media: {
           create: media.map((item: any) => ({
@@ -171,6 +221,14 @@ export async function PUT(request: NextRequest) {
 // DELETE handler to remove a post
 export async function DELETE(request: NextRequest) {
   try {
+    // Validate user role
+    const validation = await validateUserRole(['admin']);
+    if (!validation.isAuthorized) {
+      return corsHeaders(
+        NextResponse.json({ error: validation.error }, { status: validation.status })
+      );
+    }
+
     const { id } = await request.json();
     const post = await prisma.post.delete({
       where: { id },

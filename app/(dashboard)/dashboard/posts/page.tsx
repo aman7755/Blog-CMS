@@ -7,6 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PenSquare, Eye, Trash2, Plus } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
+import { RoleGate } from "@/components/role-gate";
+import { useSession } from "next-auth/react";
 
 interface Post {
   id: string;
@@ -16,11 +18,13 @@ interface Post {
   updatedAt: string;
 }
 
-export default function PostsPage() {
+function PostsContent() {
   const router = useRouter();
   const { toast } = useToast();
+  const { data: session } = useSession();
   const [posts, setPosts] = useState<Post[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const isAdmin = session?.user?.role === 'admin';
 
   useEffect(() => {
     const fetchPosts = async () => {
@@ -128,13 +132,15 @@ export default function PostsPage() {
                   >
                     <Eye className="h-4 w-4" />
                   </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => handleDelete(post.id)}
-                  >
-                    <Trash2 className="h-4 w-4 text-destructive" />
-                  </Button>
+                  {isAdmin && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleDelete(post.id)}
+                    >
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  )}
                 </div>
               </div>
             ))}
@@ -160,5 +166,13 @@ export default function PostsPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+export default function PostsPage() {
+  return (
+    <RoleGate allowedRoles={['admin', 'editor', 'author']} requireActive={true}>
+      <PostsContent />
+    </RoleGate>
   );
 }
