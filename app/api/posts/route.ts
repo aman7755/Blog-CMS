@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
 import { getServerSession, getSession } from "@/lib/auth";
-import { authOptions } from "@/lib/auth";
 
 const prisma = new PrismaClient();
 
@@ -21,8 +20,8 @@ function corsHeaders(response: NextResponse) {
 
 // Helper function to validate user session and role
 async function validateUserRole(allowedRoles: string[] = ["admin", "editor"]) {
-  const session = await getServerSession(authOptions);
-
+  const session = await getServerSession();
+  
   if (!session || !session.user) {
     return {
       isAuthorized: false,

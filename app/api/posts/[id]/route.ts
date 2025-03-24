@@ -1,7 +1,6 @@
 import { NextRequest } from "next/server";
 import { PrismaClient } from "@prisma/client";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { getServerSession } from "@/lib/auth";
 
 const prisma = new PrismaClient();
 
@@ -53,7 +52,7 @@ export async function PUT(
 ) {
   try {
     // Get user from session
-    const session = await getServerSession(authOptions);
+    const session = await getServerSession();
     if (!session?.user) {
       return Response.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -132,12 +131,12 @@ export async function PUT(
     }
 
     // Prepare updated media items with proper validation
-    let mediaToUpdate = [];
+    let mediaToUpdate: { url: string; type: string; alt: string; }[] = [];
     if (media && Array.isArray(media)) {
       // Filter out any items with empty URLs
       mediaToUpdate = media
-        .filter((item) => item.url && item.url.trim() !== "")
-        .map((item) => ({
+        .filter((item: { url?: string }) => item.url && item.url.trim() !== "")
+        .map((item: { url: string; type?: string; alt?: string }) => ({
           url: item.url,
           type: item.type || "image",
           alt: item.alt || "", // Ensure alt text is saved
@@ -155,7 +154,7 @@ export async function PUT(
       // If all URLs are the same, check if alt texts are different
       if (
         existingUrls.size === newUrls.size &&
-        [...existingUrls].every((url) => newUrls.has(url))
+        Array.from(existingUrls).every((url) => newUrls.has(url))
       ) {
         // Check if any alt texts have changed
         const altChanged = post.media.some((existing) => {
@@ -171,9 +170,9 @@ export async function PUT(
     }
 
     // Prepare card blocks for Prisma
-    let cardBlocksToCreate = [];
+    let cardBlocksToCreate: { cardId: string; position: number; }[] = [];
     if (cardBlocks && Array.isArray(cardBlocks)) {
-      cardBlocksToCreate = cardBlocks.map((block) => ({
+      cardBlocksToCreate = cardBlocks.map((block: { cardId: string; position?: number }) => ({
         cardId: block.cardId,
         position: block.position || 0,
       }));
@@ -280,7 +279,7 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    const session = await getServerSession(authOptions);
+    const session = await getServerSession();
 
     if (!session || !session.user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {

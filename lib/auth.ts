@@ -20,7 +20,7 @@ interface PrismaUser {
 declare module "next-auth" {
 	interface User {
 		id: string;
-		email: string;
+		email?: string;  // Make email optional with the same modifier as in DefaultUser
 		name?: string | null;
 		role: string;
 		isActive: boolean;
@@ -36,7 +36,7 @@ declare module "next-auth/jwt" {
 		id: string;
 		role: string;
 		isActive: boolean;
-		email: string;
+		email?: string;  // Make email optional to match User interface
 	}
 }
 
