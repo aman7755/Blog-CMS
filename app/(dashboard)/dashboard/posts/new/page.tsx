@@ -12,7 +12,7 @@ const NewPostPageClient = nextDynamic(
 
 export default function NewPostPage() {
   return (
-    <RoleGate allowedRoles={['admin', 'editor']}>
+    <RoleGate allowedRoles={['admin', 'editor', 'author']}>
       <NewPostPageClient />
     </RoleGate>
   );

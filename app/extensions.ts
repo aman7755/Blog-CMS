@@ -51,6 +51,135 @@ import {
 import "reactjs-tiptap-editor/style.css";
 import "katex/dist/katex.min.css";
 
+// Add this helper function at the top of the file
+function safeUpdateAltTextMap(extension: any, src: string, alt: string) {
+  try {
+    if (extension && extension.storage && extension.storage.altTextMap && src) {
+      extension.storage.altTextMap.set(src, alt);
+      console.log(
+        `SafeUpdateAltTextMap: Updated alt text for ${src} to "${alt}"`
+      );
+      return true;
+    } else {
+      console.warn(
+        `SafeUpdateAltTextMap: Missing properties to update alt text for ${src}`
+      );
+
+      // Try to initialize the map if it doesn't exist
+      if (extension && extension.storage && !extension.storage.altTextMap) {
+        extension.storage.altTextMap = new Map();
+        extension.storage.altTextMap.set(src, alt);
+        console.log(
+          `SafeUpdateAltTextMap: Created new altTextMap and set ${src} to "${alt}"`
+        );
+        return true;
+      }
+    }
+  } catch (error) {
+    console.error(
+      `SafeUpdateAltTextMap: Error updating alt text for ${src}:`,
+      error
+    );
+  }
+  return false;
+}
+
+// Add this at the beginning of the file after all imports
+// Global event handler for synchronizing alt text across components
+if (typeof window !== "undefined") {
+  // Wait for document to be ready
+  window.addEventListener("DOMContentLoaded", () => {
+    console.log("Setting up global alt text sync handler");
+
+    // Create a global cache for alt text
+    window.globalAltTextCache = window.globalAltTextCache || new Map();
+
+    // Enable debugging of alt text handling
+    const DEBUG_ALT_TEXT = true;
+
+    // Listen for alt text changes
+    document.addEventListener("alttextchanged", (event: any) => {
+      if (event.detail && event.detail.src && event.detail.alt !== undefined) {
+        const { src, alt } = event.detail;
+        if (DEBUG_ALT_TEXT)
+          console.log(`Global alt text changed: ${src} -> "${alt}"`);
+
+        // Store in global cache
+        window.globalAltTextCache.set(src, alt);
+
+        // Find all images with this src and update them
+        setTimeout(() => {
+          try {
+            const allImages = document.querySelectorAll(`img[src="${src}"]`);
+            if (DEBUG_ALT_TEXT)
+              console.log(`Found ${allImages.length} images with src ${src}`);
+
+            allImages.forEach((img) => {
+              img.setAttribute("alt", alt);
+              if (DEBUG_ALT_TEXT) console.log(`Updated alt text on DOM image`);
+
+              // Also check if this image is inside the editor
+              const editorRoot = img.closest(".ProseMirror");
+              if (editorRoot) {
+                // Find any extension to update its storage
+                const extensionKeys = Object.keys(window).filter(
+                  (key) =>
+                    key.startsWith("__TIPTAP_EXTENSION_") &&
+                    window[key].storage &&
+                    window[key].storage.altTextMap
+                );
+
+                extensionKeys.forEach((key) => {
+                  // Update the map
+                  if (window[key].storage.altTextMap instanceof Map) {
+                    window[key].storage.altTextMap.set(src, alt);
+                    if (DEBUG_ALT_TEXT)
+                      console.log(`Updated altTextMap in ${key}`);
+                  }
+                });
+              }
+            });
+          } catch (error) {
+            console.error("Error updating images:", error);
+          }
+        }, 0);
+      }
+    });
+
+    // Set up an interval to periodically refresh alt text from cache
+    setInterval(() => {
+      try {
+        if (
+          !window.globalAltTextCache ||
+          !(window.globalAltTextCache instanceof Map) ||
+          window.globalAltTextCache.size === 0
+        ) {
+          return;
+        }
+
+        const images = document.querySelectorAll("img");
+        images.forEach((img) => {
+          const src = img.getAttribute("src");
+          if (src && window.globalAltTextCache.has(src)) {
+            const cachedAlt = window.globalAltTextCache.get(src);
+            const currentAlt = img.getAttribute("alt") || "";
+
+            if (cachedAlt && (!currentAlt || currentAlt !== cachedAlt)) {
+              img.setAttribute("alt", cachedAlt);
+              if (DEBUG_ALT_TEXT)
+                console.log(
+                  `Refreshed alt text from cache: ${src} -> "${cachedAlt}"`
+                );
+            }
+          }
+        });
+      } catch (error) {
+        console.error("Error in alt text refresh interval:", error);
+      }
+    }, 2000);
+  });
+}
+
 // Custom CardBlock Extension
 const CardBlock = Node.create({
   name: "cardBlock",
@@ -69,7 +198,7 @@ const CardBlock = Node.create({
       },
       packageData: {
         default: null,
-      }
+      },
     };
   },
 
@@ -80,7 +209,9 @@ const CardBlock = Node.create({
         getAttrs: (dom) => ({
           packageId: dom.getAttribute("data-package-id"),
           position: parseInt(dom.getAttribute("data-position") || "0", 10),
-          packageData: dom.getAttribute("data-package-data") ? JSON.parse(dom.getAttribute("data-package-data")!) : null
+          packageData: dom.getAttribute("data-package-data")
+            ? JSON.parse(dom.getAttribute("data-package-data")!)
+            : null,
         }),
       },
     ];
@@ -106,20 +237,40 @@ const CardBlock = Node.create({
     const cardHtml = `
       <div class="package-card" style="border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; margin: 10px 0;">
         <div class="package-header" style="padding: 15px; background: #f9fafb; border-bottom: 1px solid #e5e7eb;">
-          <h3 style="margin: 0; font-size: 1.25rem; color: #111827;">${packageData.name}</h3>
-          ${packageData.tag ? `<span style="display: inline-block; padding: 2px 8px; background: #e5e7eb; border-radius: 4px; font-size: 0.875rem; margin-top: 5px;">${packageData.tag}</span>` : ''}
+          <h3 style="margin: 0; font-size: 1.25rem; color: #111827;">${
+            packageData.name
+          }</h3>
+          ${
+            packageData.tag
+              ? `<span style="display: inline-block; padding: 2px 8px; background: #e5e7eb; border-radius: 4px; font-size: 0.875rem; margin-top: 5px;">${packageData.tag}</span>`
+              : ""
+          }
         </div>
         <div class="package-content" style="padding: 15px;">
           <div class="package-image" style="margin-bottom: 15px;">
-            <img src="${packageData.banner_image || packageData.image || '/placeholder.jpg'}" 
+            <img src="${
+              packageData.banner_image ||
+              packageData.image ||
+              "/placeholder.jpg"
+            }" 
                  alt="${packageData.name}"
                  style="width: 100%; height: 200px; object-fit: cover; border-radius: 4px;">
           </div>
           <div class="package-details" style="font-size: 0.875rem; color: #4b5563;">
-            <p style="margin: 0 0 10px 0;">${atob(packageData.short_description)}</p>
+            <p style="margin: 0 0 10px 0;">${atob(
+              packageData.short_description
+            )}</p>
             <div class="package-meta" style="display: flex; gap: 15px; margin-top: 10px;">
-              ${packageData.duration ? `<span>${packageData.duration} Days</span>` : ''}
-              ${packageData.starting_price ? `<span>₹${packageData.starting_price.toLocaleString()}</span>` : ''}
+              ${
+                packageData.duration
+                  ? `<span>${packageData.duration} Days</span>`
+                  : ""
+              }
+              ${
+                packageData.starting_price
+                  ? `<span>₹${packageData.starting_price.toLocaleString()}</span>`
+                  : ""
+              }
             </div>
           </div>
         </div>
@@ -139,34 +290,38 @@ const CardBlock = Node.create({
     ];
   },
 
-  addCommands() :any {
+  addCommands(): any {
     return {
-      insertPackageCard: (packageId: string) => ({ commands, editor }: { commands: any; editor: any }) => {
-        // Fetch package data
-        fetch(`https://staging.holidaytribe.com:3000/package/getPackageByIds/${packageId}`)
-          .then(response => response.json())
-          .then(data => {
-            if (data.status && data.result && data.result[0]) {
-              const packageData = data.result[0];
+      insertPackageCard:
+        (packageId: string) =>
+        ({ commands, editor }: { commands: any; editor: any }) => {
+          // Fetch package data
+          fetch(
+            `https://staging.holidaytribe.com:3000/package/getPackageByIds/${packageId}`
+          )
+            .then((response) => response.json())
+            .then((data) => {
+              if (data.status && data.result && data.result[0]) {
+                const packageData = data.result[0];
+                commands.insertContent({
+                  type: this.name,
+                  attrs: {
+                    packageId,
+                    packageData,
+                  },
+                });
+              }
+            })
+            .catch((error) => {
+              console.error("Error fetching package data:", error);
+              // Insert a placeholder card with error state
               commands.insertContent({
-                type: this.name,
+            type: this.name,
                 attrs: {
                   packageId,
-                  packageData
-                }
+                  packageData: null,
+                },
               });
-            }
-          })
-          .catch(error => {
-            console.error('Error fetching package data:', error);
-            // Insert a placeholder card with error state
-            commands.insertContent({
-            type: this.name,
-              attrs: {
-                packageId,
-                packageData: null
-              }
-            });
           });
         },
     };
@@ -176,27 +331,30 @@ const CardBlock = Node.create({
 // Custom Image Extension with Alt Text Support
 const CustomImage = Image.extend({
   priority: 100, // Higher priority to ensure it runs before other extensions
-  
+
   addAttributes() {
     // Get the parent attributes
     const parentAttributes = this.parent?.();
-    
-    console.log('Image extension - addAttributes called', parentAttributes);
-    
+
+    console.log("Image extension - addAttributes called", parentAttributes);
+
     // Return merged attributes
     return {
       ...parentAttributes,
       alt: {
-        default: '',
+        default: "",
         parseHTML: (element) => {
-          const alt = element.getAttribute('alt') || '';
-          console.log('Image extension - parseHTML - reading alt attribute:', alt);
+          const alt = element.getAttribute("alt") || "";
+          console.log(
+            "Image extension - parseHTML - reading alt attribute:",
+            alt
+          );
           return alt;
         },
         renderHTML: (attributes) => {
-          console.log('Image extension - renderHTML - attributes:', attributes);
+          console.log("Image extension - renderHTML - attributes:", attributes);
           // Always include the alt attribute even if empty to ensure it's preserved
-          return { alt: attributes.alt || '' };
+          return { alt: attributes.alt || "" };
         },
       },
     };
@@ -208,15 +366,15 @@ const CustomImage = Image.extend({
       altTextMap: new Map(),
     };
   },
-  
+
   // Add global styles to the document when the extension is loaded
   onBeforeCreate() {
-    if (typeof document !== 'undefined') {
+    if (typeof document !== "undefined") {
       // Check if the style already exists
-      if (!document.getElementById('tiptap-image-edit-styles')) {
+      if (!document.getElementById("tiptap-image-edit-styles")) {
         // Create a style element
-        const style = document.createElement('style');
-        style.id = 'tiptap-image-edit-styles';
+        const style = document.createElement("style");
+        style.id = "tiptap-image-edit-styles";
         style.innerHTML = `
           .ProseMirror img {
             transition: all 0.2s ease-in-out;
@@ -278,35 +436,40 @@ const CustomImage = Image.extend({
           }
         `;
         document.head.appendChild(style);
-        
+
         // Add a global MutationObserver to automatically update badges
         const observer = new MutationObserver((mutations) => {
-          mutations.forEach(mutation => {
-            if (mutation.type === 'attributes' && mutation.attributeName === 'alt' && 
-                mutation.target instanceof HTMLImageElement) {
+          mutations.forEach((mutation) => {
+            if (
+              mutation.type === "attributes" &&
+              mutation.attributeName === "alt" &&
+              mutation.target instanceof HTMLImageElement
+            ) {
               const img = mutation.target;
-              const hasAlt = img.alt && img.alt.trim() !== '';
-              
+              const hasAlt = img.alt && img.alt.trim() !== "";
+
               // Find the badge and update it
-              const container = img.closest('.image-container');
+              const container = img.closest(".image-container");
               if (container) {
-                const badge = container.querySelector('.image-alt-badge');
+                const badge = container.querySelector(".image-alt-badge");
                 if (badge) {
-                  badge.textContent = hasAlt ? 'ALT' : '';
-                  (badge as HTMLElement).style.backgroundColor = hasAlt ? '#4b5563' : '#ef4444';
-                  if (!hasAlt) badge.classList.add('no-alt');
-                  else badge.classList.remove('no-alt');
+                  badge.textContent = hasAlt ? "ALT" : "";
+                  (badge as HTMLElement).style.backgroundColor = hasAlt
+                    ? "#4b5563"
+                    : "#ef4444";
+                  if (!hasAlt) badge.classList.add("no-alt");
+                  else badge.classList.remove("no-alt");
                 }
               }
             }
           });
         });
-        
+
         // Start observing the document
-        observer.observe(document.documentElement, { 
-          attributes: true, 
-          attributeFilter: ['alt'],
-          subtree: true 
+        observer.observe(document.documentElement, {
+          attributes: true,
+          attributeFilter: ["alt"],
+          subtree: true,
         });
       }
     }
@@ -314,26 +477,30 @@ const CustomImage = Image.extend({
 
   // Force preservation of alt text on content update
   onUpdate() {
-    if (typeof document !== 'undefined') {
+    if (typeof document !== "undefined") {
       const altTextMap = this.storage.altTextMap;
       if (altTextMap && altTextMap.size > 0) {
         setTimeout(() => {
           try {
-            const editorImgs = document.querySelectorAll('.ProseMirror img');
+            const editorImgs = document.querySelectorAll(".ProseMirror img");
             editorImgs.forEach((element) => {
               const img = element as HTMLImageElement;
               if (img.src && altTextMap.has(img.src)) {
-                const altText = altTextMap.get(img.src) || '';
-                console.log(`Forcing alt text on update: ${img.src} -> "${altText}"`);
-                
+                const altText = altTextMap.get(img.src) || "";
+                console.log(
+                  `Forcing alt text on update: ${img.src} -> "${altText}"`
+                );
+
                 // Update the DOM element
-                img.setAttribute('alt', altText);
-                
+                img.setAttribute("alt", altText);
+
                 // Update badge if it exists
                 const badge = img.nextElementSibling;
-                if (badge && badge.classList.contains('image-alt-badge')) {
-                  badge.textContent = altText ? 'ALT' : '';
-                  (badge as HTMLElement).style.backgroundColor = altText ? '#4b5563' : '#ef4444';
+                if (badge && badge.classList.contains("image-alt-badge")) {
+                  badge.textContent = altText ? "ALT" : "";
+                  (badge as HTMLElement).style.backgroundColor = altText
+                    ? "#4b5563"
+                    : "#ef4444";
                 }
               }
             });
@@ -345,216 +512,530 @@ const CustomImage = Image.extend({
     }
   },
 
-  // Force initial preservation of alt text
+  // Enhanced onCreate to capture alt text from the initial content
   onCreate() {
-    console.log('Image extension onCreate - initializing alt text tracking');
-    if (typeof document !== 'undefined') {
+    console.log("Image extension onCreate - initializing alt text tracking");
+    if (typeof document !== "undefined") {
+      // Make sure we have our altTextMap
+      if (!this.storage.altTextMap) {
+        console.log("Creating new altTextMap in onCreate");
+        this.storage.altTextMap = new Map();
+      }
+
       // Initialize the alt text map with values from the content
       setTimeout(() => {
         try {
-          const contentImages = document.querySelectorAll('img[alt]');
-          contentImages.forEach((element) => {
+          // Check images in the editor
+          const editorImgs = document.querySelectorAll(".ProseMirror img");
+          console.log(`Found ${editorImgs.length} images in the editor`);
+
+          editorImgs.forEach((element, index) => {
             const img = element as HTMLImageElement;
-            if (img.alt && img.alt.trim() !== '') {
-              console.log(`Storing alt text for tracking: ${img.src} -> "${img.alt}"`);
-              this.storage.altTextMap.set(img.src, img.alt);
+            const alt = img.getAttribute("alt") || "";
+
+            console.log(`Image #${index}: src=${img.src}, alt="${alt}"`);
+
+            // Store the alt text in our map
+            safeUpdateAltTextMap(this, img.src, alt);
+
+            // Ensure the badge reflects the alt text status
+            const container = img.closest(".image-container");
+            if (container) {
+              const badge = container.querySelector(".image-alt-badge");
+              if (badge) {
+                const hasAlt = alt && alt.trim() !== "";
+                badge.textContent = hasAlt ? "ALT" : "";
+                (badge as HTMLElement).style.backgroundColor = hasAlt
+                  ? "#4b5563"
+                  : "#ef4444";
+                if (!hasAlt) badge.classList.add("no-alt");
+                else badge.classList.remove("no-alt");
+
+                console.log(
+                  `Updated badge for image #${index}: hasAlt=${hasAlt}`
+                );
+              }
             }
           });
         } catch (error) {
           console.error("Error storing initial alt text:", error);
         }
-      }, 10);
+      }, 500);
     }
   },
-  
+
   // Force the alt text to be applied to the node's attributes
   onTransaction({ transaction, editor }) {
     // Check if this is a docChanged transaction
     if (transaction.docChanged) {
       // Find all image nodes in the document
       editor.state.doc.descendants((node, pos) => {
-        if (node.type.name === 'image') {
+        if (node.type.name === "image") {
           // Try to find this image in the DOM and check its alt text
-          const domImg = document.querySelector(`img[src="${node.attrs.src}"]`) as HTMLImageElement;
-          
-          // Check if the image exists and if it has alt text from our stored map
-          if (domImg && domImg.src && this.storage.altTextMap.has(domImg.src)) {
-            const storedAlt = this.storage.altTextMap.get(domImg.src);
-            if (storedAlt && storedAlt !== node.attrs.alt) {
-              console.log('Forcing alt text from storage to ProseMirror:', storedAlt);
-              editor.commands.command(({ tr }) => {
-                tr.setNodeMarkup(pos, undefined, {
-                  ...node.attrs,
-                  alt: storedAlt
+          setTimeout(() => {
+            try {
+              const domImg = document.querySelector(
+                `img[src="${node.attrs.src}"]`
+              ) as HTMLImageElement;
+
+              // Check if the image exists and if it has alt text from our stored map
+              if (
+                domImg &&
+                domImg.src &&
+                this.storage.altTextMap &&
+                this.storage.altTextMap.has(domImg.src)
+              ) {
+                const storedAlt = this.storage.altTextMap.get(domImg.src);
+                if (storedAlt && storedAlt !== node.attrs.alt) {
+                  console.log(
+                    "Forcing alt text from storage to ProseMirror:",
+                    storedAlt
+                  );
+                  editor.commands.command(({ tr }) => {
+                    tr.setNodeMarkup(pos, undefined, {
+                      ...node.attrs,
+                      alt: storedAlt,
+                    });
+                    return true;
+                  });
+                }
+              }
+
+              // Also check if DOM has alt text that the node doesn't
+              if (domImg && domImg.alt && domImg.alt !== node.attrs.alt) {
+                console.log(
+                  "Syncing alt text from DOM to ProseMirror:",
+                  domImg.alt
+                );
+                editor.commands.command(({ tr }) => {
+                  tr.setNodeMarkup(pos, undefined, {
+                    ...node.attrs,
+                    alt: domImg.alt,
+                  });
+                  return true;
                 });
-                return true;
-              });
+              }
+            } catch (error) {
+              console.error("Error in onTransaction:", error);
             }
-          }
-          
-          // Also check if DOM has alt text that the node doesn't
-          if (domImg && domImg.alt && domImg.alt !== node.attrs.alt) {
-            console.log('Syncing alt text from DOM to ProseMirror:', domImg.alt);
-            editor.commands.command(({ tr }) => {
-              tr.setNodeMarkup(pos, undefined, {
-                ...node.attrs,
-                alt: domImg.alt
-              });
-              return true;
-            });
-          }
+          }, 0);
         }
         return false; // Continue traversal
       });
     }
   },
-  
+
   addNodeView() {
     return ({ node, HTMLAttributes, getPos, editor }) => {
       // Create the container
-      const dom = document.createElement('div');
-      dom.className = 'image-container';
-      
+      const dom = document.createElement("div");
+      dom.className = "image-container";
+
       // Create the image element
-      const img = document.createElement('img');
-      
+      const img = document.createElement("img");
+
       // Copy all HTML attributes to the img element
       Object.entries(HTMLAttributes).forEach(([key, value]) => {
         img.setAttribute(key, value);
       });
-      
-      // Debug current alt text
-      console.log('NodeView - image attributes:', HTMLAttributes);
-      console.log('NodeView - alt text from node attrs:', node.attrs.alt);
-      console.log('NodeView - alt text from HTML attributes:', HTMLAttributes.alt);
-      
-      // Check if we have stored alt text for this image
-      if (this.storage.altTextMap && this.storage.altTextMap.has(HTMLAttributes.src)) {
-        const storedAlt = this.storage.altTextMap.get(HTMLAttributes.src);
-        console.log(`Found stored alt text for ${HTMLAttributes.src}: "${storedAlt}"`);
-        img.setAttribute('alt', storedAlt);
+
+      // Ensure the alt attribute is copied from the node
+      if (node.attrs.alt !== undefined) {
+        console.log(
+          `NodeView - Setting alt text from node: "${node.attrs.alt}"`
+        );
+        img.setAttribute("alt", node.attrs.alt);
+
+        // Also store in our map
+        if (img.src) {
+          this.storage.altTextMap.set(img.src, node.attrs.alt);
+        }
       }
-      // Or ensure alt is set on the img element from node attributes
-      else if (node.attrs.alt && !img.getAttribute('alt')) {
-        console.log('Setting missing alt attribute from node attrs:', node.attrs.alt);
-        img.setAttribute('alt', node.attrs.alt);
-      }
-      
+
+      // Store a reference to the extension instance for later use
+      const extension = this;
+
       // Create the badge element
-      const badge = document.createElement('span');
-      badge.className = 'image-alt-badge';
-      
+      const badge = document.createElement("span");
+      badge.className = "image-alt-badge";
+
       // Determine if we have alt text
-      const hasAlt = img.getAttribute('alt') && img.getAttribute('alt')!.trim() !== '';
-      badge.textContent = hasAlt ? 'ALT' : '';
-      badge.style.backgroundColor = hasAlt ? '#4b5563' : '#ef4444';
-      if (!hasAlt) badge.classList.add('no-alt');
-      
+      const hasAlt =
+        img.getAttribute("alt") && img.getAttribute("alt")!.trim() !== "";
+      badge.textContent = hasAlt ? "ALT" : "";
+      badge.style.backgroundColor = hasAlt ? "#4b5563" : "#ef4444";
+      if (!hasAlt) badge.classList.add("no-alt");
+
       // Force visibility
-      badge.style.display = 'block';
-      badge.style.visibility = 'visible';
-      badge.style.opacity = '1';
-      
-      // The double-click handler for editing alt text
+      badge.style.display = "block";
+      badge.style.visibility = "visible";
+      badge.style.opacity = "1";
+
+      // Enhance the double-click handler to fix alt text display issues
       const handleDoubleClick = (event: MouseEvent) => {
         event.preventDefault();
         event.stopPropagation();
-        
-        // Get the current alt text
-        const currentAlt = img.getAttribute('alt') || '';
-        
-        // Prompt for new alt text
-        const newAlt = prompt('Edit image alt text:', currentAlt);
-        if (newAlt !== null) {
+
+        // Get the current alt text directly from the image
+        // This is the crucial part that needs to be fixed
+        const currentAlt = img.getAttribute("alt") || "";
+
+        console.log(
+          `[ALT DEBUG] Double-click handler triggered for image:`,
+          img.src
+        );
+        console.log(`[ALT DEBUG] Direct DOM alt attribute: "${currentAlt}"`);
+
+        // Try to get the most accurate alt text from multiple sources
+        // Check all possible sources and use the one with a value
+        let altTextToShow = currentAlt;
+        let altSource = "DOM element";
+
+        // First check if we have alt text in the node attributes (most reliable source)
+        if (node.attrs.alt !== undefined) {
+          console.log(`[ALT DEBUG] Node attributes alt: "${node.attrs.alt}"`);
+          if (
+            node.attrs.alt &&
+            (!altTextToShow || altTextToShow.trim() === "")
+          ) {
+            altTextToShow = node.attrs.alt;
+            altSource = "Node attributes";
+          }
+        }
+
+        // Then check global cache as second option
+        if (
+          window.globalAltTextCache &&
+          window.globalAltTextCache.has(img.src)
+        ) {
+          const cachedAlt = window.globalAltTextCache.get(img.src);
+          console.log(`[ALT DEBUG] Global cache alt: "${cachedAlt}"`);
+          if (cachedAlt && (!altTextToShow || altTextToShow.trim() === "")) {
+            altTextToShow = cachedAlt;
+            altSource = "Global cache";
+          }
+        }
+
+        // Finally check extension storage as last resort
+        if (
+          extension.storage?.altTextMap &&
+          extension.storage.altTextMap.has(img.src)
+        ) {
+          const storedAlt = extension.storage.altTextMap.get(img.src);
+          console.log(`[ALT DEBUG] Extension storage alt: "${storedAlt}"`);
+          if (storedAlt && (!altTextToShow || altTextToShow.trim() === "")) {
+            altTextToShow = storedAlt;
+            altSource = "Extension storage";
+          }
+        }
+
+        console.log(
+          `[ALT DEBUG] Final alt text to show: "${altTextToShow}" (from ${altSource})`
+        );
+
+        // Create a custom modal instead of using prompt
+        const modalBackdrop = document.createElement("div");
+        modalBackdrop.style.position = "fixed";
+        modalBackdrop.style.top = "0";
+        modalBackdrop.style.left = "0";
+        modalBackdrop.style.width = "100%";
+        modalBackdrop.style.height = "100%";
+        modalBackdrop.style.backgroundColor = "rgba(0, 0, 0, 0.5)";
+        modalBackdrop.style.display = "flex";
+        modalBackdrop.style.justifyContent = "center";
+        modalBackdrop.style.alignItems = "center";
+        modalBackdrop.style.zIndex = "9999";
+
+        const modalContent = document.createElement("div");
+        modalContent.style.backgroundColor = "white";
+        modalContent.style.padding = "20px";
+        modalContent.style.borderRadius = "8px";
+        modalContent.style.width = "400px";
+        modalContent.style.maxWidth = "90%";
+        modalContent.style.boxShadow = "0 4px 12px rgba(0, 0, 0, 0.15)";
+
+        const modalHeader = document.createElement("h3");
+        modalHeader.textContent = "Edit Image Alt Text";
+        modalHeader.style.margin = "0 0 16px 0";
+        modalHeader.style.fontSize = "18px";
+        modalHeader.style.fontWeight = "bold";
+        modalHeader.style.color = "#111827";
+
+        const modalDescription = document.createElement("p");
+        modalDescription.textContent =
+          "Alt text helps describe images to users with visual impairments and improves SEO.";
+        modalDescription.style.margin = "0 0 16px 0";
+        modalDescription.style.fontSize = "14px";
+        modalDescription.style.color = "#6b7280";
+
+        const imagePreview = document.createElement("div");
+        imagePreview.style.width = "100%";
+        imagePreview.style.height = "150px";
+        imagePreview.style.marginBottom = "16px";
+        imagePreview.style.position = "relative";
+        imagePreview.style.borderRadius = "4px";
+        imagePreview.style.overflow = "hidden";
+        imagePreview.style.border = "1px solid #e5e7eb";
+
+        const previewImg = document.createElement("img");
+        previewImg.src = img.src;
+        previewImg.alt = altTextToShow;
+        previewImg.style.width = "100%";
+        previewImg.style.height = "100%";
+        previewImg.style.objectFit = "contain";
+
+        const currentAltInfo = document.createElement("div");
+        if (altTextToShow) {
+          currentAltInfo.textContent = `Current alt text: "${altTextToShow}"`;
+          currentAltInfo.style.fontSize = "14px";
+          currentAltInfo.style.color = "#4b5563";
+          currentAltInfo.style.margin = "0 0 12px 0";
+          currentAltInfo.style.padding = "4px 8px";
+          currentAltInfo.style.backgroundColor = "#f3f4f6";
+          currentAltInfo.style.borderRadius = "4px";
+        }
+
+        const inputLabel = document.createElement("label");
+        inputLabel.textContent = "Alt text:";
+        inputLabel.style.display = "block";
+        inputLabel.style.marginBottom = "8px";
+        inputLabel.style.fontSize = "14px";
+        inputLabel.style.fontWeight = "bold";
+        inputLabel.style.color = "#374151";
+
+        const input = document.createElement("input");
+        input.type = "text";
+        input.value = altTextToShow;
+        input.placeholder = "Describe this image...";
+        input.style.width = "100%";
+        input.style.padding = "8px 12px";
+        input.style.borderRadius = "4px";
+        input.style.border = "1px solid #d1d5db";
+        input.style.fontSize = "14px";
+        input.style.marginBottom = "16px";
+
+        const buttonContainer = document.createElement("div");
+        buttonContainer.style.display = "flex";
+        buttonContainer.style.justifyContent = "flex-end";
+        buttonContainer.style.gap = "8px";
+
+        const cancelButton = document.createElement("button");
+        cancelButton.textContent = "Cancel";
+        cancelButton.style.padding = "8px 16px";
+        cancelButton.style.borderRadius = "4px";
+        cancelButton.style.border = "1px solid #d1d5db";
+        cancelButton.style.backgroundColor = "white";
+        cancelButton.style.fontSize = "14px";
+        cancelButton.style.cursor = "pointer";
+
+        const saveButton = document.createElement("button");
+        saveButton.textContent = "Save";
+        saveButton.style.padding = "8px 16px";
+        saveButton.style.borderRadius = "4px";
+        saveButton.style.border = "1px solid transparent";
+        saveButton.style.backgroundColor = "#3b82f6";
+        saveButton.style.color = "white";
+        saveButton.style.fontSize = "14px";
+        saveButton.style.cursor = "pointer";
+
+        // Add an option to remove alt text completely
+        const removeButton = document.createElement("button");
+        removeButton.textContent = "Remove Alt Text";
+        removeButton.style.padding = "8px 16px";
+        removeButton.style.borderRadius = "4px";
+        removeButton.style.border = "1px solid #f43f5e";
+        removeButton.style.backgroundColor = "white";
+        removeButton.style.color = "#f43f5e";
+        removeButton.style.fontSize = "14px";
+        removeButton.style.marginRight = "auto";
+        removeButton.style.cursor = "pointer";
+
+        // Assemble the modal
+        imagePreview.appendChild(previewImg);
+        buttonContainer.appendChild(removeButton);
+        buttonContainer.appendChild(cancelButton);
+        buttonContainer.appendChild(saveButton);
+
+        modalContent.appendChild(modalHeader);
+        modalContent.appendChild(modalDescription);
+        modalContent.appendChild(imagePreview);
+
+        // Add current alt info if it exists
+        if (altTextToShow) {
+          modalContent.appendChild(currentAltInfo);
+        }
+
+        modalContent.appendChild(inputLabel);
+        modalContent.appendChild(input);
+        modalContent.appendChild(buttonContainer);
+
+        modalBackdrop.appendChild(modalContent);
+        document.body.appendChild(modalBackdrop);
+
+        // Focus the input
+        input.focus();
+        input.select();
+
+        // Handle cancel button
+        cancelButton.addEventListener("click", () => {
+          document.body.removeChild(modalBackdrop);
+        });
+
+        // Handle ESC key
+        modalBackdrop.addEventListener("keydown", (e) => {
+          if (e.key === "Escape") {
+            document.body.removeChild(modalBackdrop);
+          }
+        });
+
+        // Handle remove button
+        removeButton.addEventListener("click", () => {
+          // Update the alt text to empty string
+          updateAltText("");
+          document.body.removeChild(modalBackdrop);
+        });
+
+        // Handle save button
+        saveButton.addEventListener("click", () => {
+          updateAltText(input.value);
+          document.body.removeChild(modalBackdrop);
+        });
+
+        // Also handle ENTER key
+        input.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") {
+            updateAltText(input.value);
+            document.body.removeChild(modalBackdrop);
+          }
+        });
+
+        // Function to update alt text in all places
+        function updateAltText(newAlt: string) {
           try {
+            console.log(
+              `[ALT DEBUG] Updating alt text from "${altTextToShow}" to "${newAlt}"`
+            );
+
+            // Update the ProseMirror model
             const pos = getPos();
-            if (typeof pos === 'number') {
-              // Update the alt text in the editor's state
+            if (typeof pos === "number") {
               editor.commands.command(({ tr }) => {
                 tr.setNodeMarkup(pos, undefined, {
                   ...node.attrs,
-                  alt: newAlt
+                  alt: newAlt,
                 });
                 return true;
               });
-              
-              // Also update the DOM directly for immediate feedback
-              img.setAttribute('alt', newAlt);
-              badge.textContent = newAlt ? 'ALT' : '';
-              badge.style.backgroundColor = newAlt ? '#4b5563' : '#ef4444';
-              
-              if (newAlt) {
-                badge.classList.remove('no-alt');
-              } else {
-                badge.classList.add('no-alt');
-              }
-              
-              console.log('Updated image alt text to:', newAlt);
-              
-              // Store the updated alt text
-              this.storage.altTextMap.set(img.src, newAlt);
-              
-              // Dispatch a custom event to notify of the alt text change
-              const event = new CustomEvent('alttextchanged', { 
-                detail: { src: img.src, alt: newAlt } 
-              });
-              document.dispatchEvent(event);
             }
+
+            // Update the element directly
+            img.setAttribute("alt", newAlt);
+
+            // Update badge
+            badge.textContent = newAlt ? "ALT" : "";
+            badge.style.backgroundColor = newAlt ? "#4b5563" : "#ef4444";
+
+            if (newAlt) {
+              badge.classList.remove("no-alt");
+            } else {
+              badge.classList.add("no-alt");
+            }
+
+            // Store in global cache
+            if (window.globalAltTextCache) {
+              window.globalAltTextCache.set(img.src, newAlt);
+            }
+
+            // Store in extension
+            safeUpdateAltTextMap(extension, img.src, newAlt);
+
+            // Dispatch event
+            const event = new CustomEvent("alttextchanged", {
+              detail: { src: img.src, alt: newAlt },
+            });
+            document.dispatchEvent(event);
+
+            console.log("[ALT DEBUG] Alt text updated successfully");
           } catch (err) {
-            console.error('Error updating alt text:', err);
+            console.error("[ALT DEBUG] Error updating alt text:", err);
           }
         }
       };
-      
+
       // Add the double-click handler to both elements
-      img.addEventListener('dblclick', handleDoubleClick);
-      dom.addEventListener('dblclick', handleDoubleClick);
-      
+      img.addEventListener("dblclick", handleDoubleClick);
+      dom.addEventListener("dblclick", handleDoubleClick);
+
       // Append elements
       dom.appendChild(img);
       dom.appendChild(badge);
-      
+
       return {
         dom,
         contentDOM: null,
         update(updatedNode) {
-          if (updatedNode.type.name !== 'image') return false;
-          
-          console.log('NodeView update - new alt text:', updatedNode.attrs.alt);
-          
-          // Update all attributes
+          if (updatedNode.type.name !== "image") return false;
+
+          console.log("NodeView update - new alt text:", updatedNode.attrs.alt);
+
+          // Update all attributes with better null checking
           Object.entries(updatedNode.attrs).forEach(([key, value]) => {
-            if (key === 'alt' && value) {
-              console.log(`Setting alt attribute to "${value}"`);
+            if (key === "alt") {
+              // Handle alt attribute specially with null safety
+              console.log(
+                `Setting alt attribute to "${
+                  value !== null && value !== undefined ? value : ""
+                }"`
+              );
+              img.setAttribute(
+                key,
+                value !== null && value !== undefined ? String(value) : ""
+              );
+
+              // Update our storage map using the stored extension reference
+              if (img.src) {
+                safeUpdateAltTextMap(
+                  extension,
+                  img.src,
+                  value !== null && value !== undefined ? String(value) : ""
+                );
+              }
+            } else if (key !== "alt" && value !== null && value !== undefined) {
+              // Only set attributes for non-null values
+              try {
+                img.setAttribute(key, String(value));
+              } catch (error) {
+                console.error(`Error setting attribute ${key}:`, error);
+              }
             }
-            img.setAttribute(key, value);
           });
-          
+
           // Update the badge
-          const hasAlt = updatedNode.attrs.alt && updatedNode.attrs.alt.trim() !== '';
-          badge.textContent = hasAlt ? 'ALT' : '';
-          badge.style.backgroundColor = hasAlt ? '#4b5563' : '#ef4444';
-          
+          const hasAlt =
+            updatedNode.attrs.alt && updatedNode.attrs.alt.trim() !== "";
+          badge.textContent = hasAlt ? "ALT" : "";
+          badge.style.backgroundColor = hasAlt ? "#4b5563" : "#ef4444";
+
           if (hasAlt) {
-            badge.classList.remove('no-alt');
+            badge.classList.remove("no-alt");
           } else {
-            badge.classList.add('no-alt');
+            badge.classList.add("no-alt");
           }
-          
+
           return true;
         },
         destroy() {
           // Clean up event listeners
-          img.removeEventListener('dblclick', handleDoubleClick);
-          dom.removeEventListener('dblclick', handleDoubleClick);
-        }
+          img.removeEventListener("dblclick", handleDoubleClick);
+          dom.removeEventListener("dblclick", handleDoubleClick);
+        },
       };
     };
   },
 }).configure({
   upload: async (file: File) => {
-    console.log('Image extension - upload started for file:', file.name);
-    
+    console.log("Image extension - upload started for file:", file.name);
+
     const formData = new FormData();
     formData.append("file", file);
     formData.append("type", "image");
@@ -566,84 +1047,96 @@ const CustomImage = Image.extend({
 
     if (!response.ok) throw new Error("Image upload failed");
     const { url } = await response.json();
-    console.log('Image extension - upload successful, received URL:', url);
+    console.log("Image extension - upload successful, received URL:", url);
     
     // Prompt the user for alt text
-    const altText = prompt("Please enter alt text for this image:", file.name || "");
-    console.log('Image extension - user entered alt text:', altText);
-    
+    const altText = prompt(
+      "Please enter alt text for this image:",
+      file.name || ""
+    );
+    console.log("Image extension - user entered alt text:", altText);
+
     // We will use this URL and alt text pair in the handleTransaction plugin
     window.lastUploadedImage = {
       url,
-      alt: altText || ''
+      alt: altText || "",
     };
-    
+
+    // Store the alt text in our map for persistence
+    if (altText) {
+      setTimeout(() => {
+        try {
+          const customImage = extensions.find((ext) => ext.name === "image");
+          if (customImage) {
+            customImage.storage.altTextMap.set(url, altText);
+            console.log(
+              `Stored alt text for new image: ${url} -> "${altText}"`
+            );
+          }
+        } catch (error) {
+          console.error("Error storing alt text for new image:", error);
+        }
+      }, 100);
+    }
+
     // Return just the URL as required by the Image extension
     return url;
   },
   HTMLAttributes: {
-    class: 'image',
+    class: "image",
   },
 });
 
-// Helper function to inject alt text into content
-export const injectAltText = (content: string): string => {
-  if (!content.includes('<img') || typeof window === 'undefined') {
-    return content;
-  }
-  
+// Check if this is the injectAltText function in @/app/extensions.ts
+// Enhance the function to be smarter about preserving existing alt text
+
+export function injectAltText(content: string): string {
+  if (!content) return content;
+
   const parser = new DOMParser();
-  const doc = parser.parseFromString(content, 'text/html');
-  const images = doc.querySelectorAll('img');
-  
-  // If we have a lastUploadedImage from the window, apply its alt text
-  if (window.lastUploadedImage && window.lastUploadedImage.url && images.length > 0) {
-    images.forEach(img => {
-      if (img.src === window.lastUploadedImage!.url && !img.alt) {
-        console.log('Injecting alt text for image:', window.lastUploadedImage!.url);
-        img.alt = window.lastUploadedImage!.alt;
-      }
-    });
-    
-    // Clear the last uploaded image info
-    window.lastUploadedImage = null;
-    
-    // Return the updated HTML content
-    return doc.body.innerHTML;
-  }
-  
-  // Ensure alt attributes are preserved in the content
+  const doc = parser.parseFromString(content, "text/html");
+  const images = doc.querySelectorAll("img");
   let contentChanged = false;
-  images.forEach(img => {
-    // If the image somehow lost its alt attribute during serialization,
-    // but we can find it in the DOM through its src, restore it
-    if (!img.alt && img.src) {
-      const domImages = document.querySelectorAll('img');
-      const domImagesArray = Array.from(domImages);
-      for (const domImg of domImagesArray) {
-        if (domImg.src === img.src && domImg.alt) {
-          img.alt = domImg.alt;
-          console.log('Restored alt text for image from DOM:', img.src, 'Alt:', domImg.alt);
-          contentChanged = true;
-          break;
-        }
-      }
+
+  images.forEach((img) => {
+    // Only add alt text if it's missing or empty
+    if (!img.hasAttribute("alt") || img.getAttribute("alt") === "") {
+      contentChanged = true;
+
+      // Extract a filename-based alt text if possible
+      const src = img.getAttribute("src") || "";
+      const filename = src.split("/").pop() || "";
+      const nameWithoutExt = filename.split(".")[0] || "Image";
+
+      // Convert kebab-case or underscores to spaces, and capitalize first letter
+      const altText = nameWithoutExt
+        .replace(/[-_]/g, " ")
+        .replace(/\b\w/g, (l) => l.toUpperCase());
+
+      img.setAttribute("alt", altText);
     }
   });
-  
-  // Only return the modified content if changes were made
-  return contentChanged ? doc.body.innerHTML : content;
-};
 
-// Add the type definition for window.lastUploadedImage
+  // Only return the new content if changes were made
+  return contentChanged ? doc.body.innerHTML : content;
+}
+
+// Update the window interface declaration
 declare global {
   interface Window {
     lastUploadedImage: { url: string; alt: string } | null;
+    globalAltTextCache: Map<string, string>;
+    __TIPTAP_EXTENSION_IMAGE?: {
+      storage: {
+        altTextMap: Map<string, string>;
+      };
+    };
+    [key: string]: any;
   }
 }
 
 // Initialize the lastUploadedImage property on window
-if (typeof window !== 'undefined') {
+if (typeof window !== "undefined") {
   window.lastUploadedImage = null;
 }
 

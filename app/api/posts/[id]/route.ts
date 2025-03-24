@@ -1,185 +1,341 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { PrismaClient } from "@prisma/client";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 
 const prisma = new PrismaClient();
 
-// Helper function to add CORS headers to responses
-function corsHeaders(response: NextResponse) {
-  response.headers.set("Access-Control-Allow-Origin", "*"); // Or specific origin like 'http://localhost:4200'
-  response.headers.set(
-    "Access-Control-Allow-Methods",
-    "GET, POST, PUT, DELETE, OPTIONS"
-  );
-  response.headers.set(
-    "Access-Control-Allow-Headers",
-    "Content-Type, Authorization"
-  );
-  return response;
-}
-
-// Helper function to validate user session and role
-async function validateUserRole(allowedRoles: string[] = ['admin', 'editor']) {
-  const session = await getServerSession(authOptions);
-  
-  if (!session || !session.user) {
-    return { 
-      isAuthorized: false, 
-      error: "Unauthorized: You must be logged in", 
-      status: 401 
-    };
-  }
-  
-  if (!session.user.isActive) {
-    return { 
-      isAuthorized: false, 
-      error: "Unauthorized: Your account is inactive", 
-      status: 403 
-    };
-  }
-  
-  if (!session.user.role || !allowedRoles.includes(session.user.role)) {
-    return { 
-      isAuthorized: false, 
-      error: `Unauthorized: You need one of these roles: ${allowedRoles.join(', ')}`, 
-      status: 403 
-    };
-  }
-  
-  return { isAuthorized: true, userId: session.user.id };
-}
-
-// Handle OPTIONS requests for CORS preflight
-export async function OPTIONS(request: NextRequest) {
-  return corsHeaders(new NextResponse(null, { status: 200 }));
-}
-
-// GET handler to fetch a post by ID
-export async function GET(request: NextRequest, { params }: any) {
+// GET /api/posts/[id]
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
   try {
-    const { id } = params;
-    console.log("API fetching post with id:", id); // Debug log
     const post = await prisma.post.findUnique({
-      where: { id },
+      where: { id: params.id },
       include: {
-        media: true,
-        cardBlocks: {
-          orderBy: { position: "asc" },
+        author: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
         },
+        media: true,
+        cardBlocks: true,
       },
     });
-    if (!post)
-      return corsHeaders(
-        NextResponse.json({ error: "Post not found" }, { status: 404 })
-      );
-    return corsHeaders(NextResponse.json(post));
+
+    if (!post) {
+      return new Response(JSON.stringify({ error: "Post not found" }), {
+        status: 404,
+      });
+    }
+
+    return new Response(JSON.stringify(post), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
   } catch (error) {
-    return corsHeaders(
-      NextResponse.json({ error: (error as Error).message }, { status: 500 })
-    );
+    console.error("Error fetching post:", error);
+    return new Response(JSON.stringify({ error: "Internal Server Error" }), {
+      status: 500,
+    });
   }
 }
 
-// PUT handler to update a post by ID
-export async function PUT(request: NextRequest, { params }: any) {
+// PUT /api/posts/[id]
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
   try {
-    // Validate user role
-    const validation = await validateUserRole(['admin', 'editor']);
-    if (!validation.isAuthorized) {
-      return corsHeaders(
-        NextResponse.json({ error: validation.error }, { status: validation.status })
-      );
+    // Get user from session
+    const session = await getServerSession(authOptions);
+    if (!session?.user) {
+      return Response.json({ error: "Unauthorized" }, { status: 401 });
     }
-    
-    const { id } = params;
-    const { 
-      title, 
-      content, 
-      slug, 
-      excerpt, 
-      authorId, 
-      media, 
-      cardBlocks,
+
+    // Parse request body
+    const body = await request.json();
+    const {
+      title,
+      content,
+      slug,
+      status,
+      excerpt,
+      authorId,
       metaTitle,
       metaDescription,
       featureImage,
       featureImageAlt,
-      packageIds
-    } = await request.json();
-    
-    console.log("API - PUT - Updating post with SEO data:", { metaTitle, metaDescription });
-    console.log("API - PUT - Feature image:", featureImage);
-    console.log("API - PUT - Package IDs:", packageIds);
-    
-    // Delete existing media and card blocks
-    await prisma.postMedia.deleteMany({ where: { postId: id } });
-    await prisma.postCardBlock.deleteMany({ where: { postId: id } });
-    
-    const post = await prisma.post.update({
-      where: { id },
+      media,
+      cardBlocks,
+      packageIds,
+    } = body;
+
+    // Log the media items received for debugging
+    console.log(
+      `API: Received ${media?.length ?? 0} media items with alt text`
+    );
+    if (media && media.length > 0) {
+      media.forEach((item: any, index: number) => {
+        console.log(
+          `API: Media item #${index}: url=${item.url}, alt="${item.alt}"`
+        );
+      });
+    }
+
+    // Get post to verify ownership
+    const post = await prisma.post.findUnique({
+      where: { id: params.id },
+      include: {
+        author: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            role: true,
+          },
+        },
+        media: true, // Include current media items to compare
+      },
+    });
+
+    if (!post) {
+      return Response.json({ error: "Post not found" }, { status: 404 });
+    }
+
+    // Check if user is author of the post, an admin, or an editor
+    const isAuthor = post.authorId === session.user.id;
+    const isAdminOrEditor =
+      session.user.role === "admin" || session.user.role === "editor";
+    if (!isAuthor && !isAdminOrEditor) {
+      return Response.json(
+        { error: "You can only edit your own posts" },
+        { status: 403 }
+      );
+    }
+
+    // Only editors and admins can publish or archive posts
+    if (
+      !isAdminOrEditor &&
+      status &&
+      (status === "PUBLISHED" || status === "ARCHIVED")
+    ) {
+      return Response.json(
+        { error: "Only editors and admins can publish or archive posts" },
+        { status: 403 }
+      );
+    }
+
+    // Prepare updated media items with proper validation
+    let mediaToUpdate = [];
+    if (media && Array.isArray(media)) {
+      // Filter out any items with empty URLs
+      mediaToUpdate = media
+        .filter((item) => item.url && item.url.trim() !== "")
+        .map((item) => ({
+          url: item.url,
+          type: item.type || "image",
+          alt: item.alt || "", // Ensure alt text is saved
+        }));
+    }
+
+    // Check if media has actually changed to avoid unnecessary DB operations
+    let mediaChanged = true;
+
+    if (post.media.length === mediaToUpdate.length) {
+      // Simple check - if count is the same, do deeper comparison
+      const existingUrls = new Set(post.media.map((m) => m.url));
+      const newUrls = new Set(mediaToUpdate.map((m) => m.url));
+
+      // If all URLs are the same, check if alt texts are different
+      if (
+        existingUrls.size === newUrls.size &&
+        [...existingUrls].every((url) => newUrls.has(url))
+      ) {
+        // Check if any alt texts have changed
+        const altChanged = post.media.some((existing) => {
+          const matchingNew = mediaToUpdate.find((m) => m.url === existing.url);
+          return matchingNew && matchingNew.alt !== existing.alt;
+        });
+
+        if (!altChanged) {
+          mediaChanged = false;
+          console.log("API: Media unchanged, skipping media update");
+        }
+      }
+    }
+
+    // Prepare card blocks for Prisma
+    let cardBlocksToCreate = [];
+    if (cardBlocks && Array.isArray(cardBlocks)) {
+      cardBlocksToCreate = cardBlocks.map((block) => ({
+        cardId: block.cardId,
+        position: block.position || 0,
+      }));
+    }
+
+    // Then update the post
+    const updatedPost = await prisma.post.update({
+      where: { id: params.id },
       data: {
         title,
         content,
         slug,
+        status: status || post.status,
         excerpt,
-        authorId: authorId || validation.userId, // Use validated user ID if not provided
-        metaTitle: metaTitle || title, // Use title as fallback
-        metaDescription: metaDescription || excerpt, // Use excerpt as fallback
-        featureImage: featureImage || null,
-        featureImageAlt: featureImageAlt || '',
+        authorId,
+        metaTitle,
+        metaDescription,
+        featureImage,
+        featureImageAlt,
+        updatedAt: new Date(),
         packageIds: packageIds || [],
-        media: {
-          create: media.map((item: any) => ({
-            url: item.url,
-            type: item.type,
-            alt: item.alt || '',
-          })),
-        },
-        cardBlocks: {
-          create: cardBlocks.map((item: any) => ({
-            cardId: item.cardId,
-            position: item.position,
-          })),
+      },
+      include: {
+        author: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
         },
       },
     });
-    return corsHeaders(NextResponse.json(post));
-  } catch (error) {
-    console.error("Error updating post:", error); // Debug log
-    return corsHeaders(
-      NextResponse.json({ error: (error as Error).message }, { status: 500 })
+
+    // Only update media if it has changed
+    if (mediaChanged) {
+      // Delete existing media relationships
+      await prisma.postMedia.deleteMany({
+        where: { postId: params.id },
+      });
+
+      // Create new media items
+      if (mediaToUpdate.length > 0) {
+        await prisma.postMedia.createMany({
+          data: mediaToUpdate.map((item) => ({
+            ...item,
+            postId: params.id,
+          })),
+        });
+      }
+    }
+
+    // Handle card blocks
+    await prisma.postCardBlock.deleteMany({
+      where: { postId: params.id },
+    });
+
+    if (cardBlocksToCreate.length > 0) {
+      await prisma.postCardBlock.createMany({
+        data: cardBlocksToCreate.map((block) => ({
+          ...block,
+          postId: params.id,
+        })),
+      });
+    }
+
+    // Fetch the complete updated post with all relationships
+    const completePost = await prisma.post.findUnique({
+      where: { id: params.id },
+      include: {
+        author: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+        media: true,
+        cardBlocks: true,
+      },
+    });
+
+    // Log the saved media items for debugging
+    console.log(
+      `API: Saved ${completePost?.media.length || 0} media items to database`
     );
+    if (completePost?.media) {
+      completePost.media.forEach((item: any, index: number) => {
+        console.log(
+          `API: Saved media #${index}: url=${item.url}, alt="${item.alt}"`
+        );
+      });
+    }
+
+    return Response.json(completePost);
+  } catch (error) {
+    console.error("Error updating post:", error);
+    return Response.json({ error: "Failed to update post" }, { status: 500 });
   }
 }
 
-// DELETE handler to delete a post by ID
-export async function DELETE(request: NextRequest, { params }: any) {
+// DELETE /api/posts/[id]
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
   try {
-    // Validate user role - only admin can delete
-    const validation = await validateUserRole(['admin']);
-    if (!validation.isAuthorized) {
-      return corsHeaders(
-        NextResponse.json({ error: validation.error }, { status: validation.status })
+    const session = await getServerSession(authOptions);
+
+    if (!session || !session.user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+      });
+    }
+
+    // Get the post to check ownership
+    const existingPost = await prisma.post.findUnique({
+      where: { id: params.id },
+      select: { authorId: true },
+    });
+
+    if (!existingPost) {
+      return new Response(JSON.stringify({ error: "Post not found" }), {
+        status: 404,
+      });
+    }
+
+    // Check if user has permission to delete this post
+    const isAdmin = session.user.role === "admin";
+    const isEditor = session.user.role === "editor";
+    const isAuthor = existingPost.authorId === session.user.id;
+
+    if (!isAdmin && !isEditor && !isAuthor) {
+      return new Response(
+        JSON.stringify({
+          error: "You don't have permission to delete this post",
+        }),
+        { status: 403 }
       );
     }
-    
-    const { id } = params;
-    
-    // First delete related media and card blocks (should happen automatically with cascade)
-    await prisma.postMedia.deleteMany({ where: { postId: id } });
-    await prisma.postCardBlock.deleteMany({ where: { postId: id } });
-    
-    // Then delete the post
-    const post = await prisma.post.delete({
-      where: { id },
+
+    // First, delete all related records
+    await prisma.postMedia.deleteMany({
+      where: { postId: params.id },
     });
-    
-    return corsHeaders(NextResponse.json({ message: "Post deleted successfully" }));
+
+    await prisma.postCardBlock.deleteMany({
+      where: { postId: params.id },
+    });
+
+    // Then delete the post
+    await prisma.post.delete({
+      where: { id: params.id },
+    });
+
+    return new Response(null, { status: 204 });
   } catch (error) {
-    console.error("Error deleting post:", error); // Debug log
-    return corsHeaders(
-      NextResponse.json({ error: (error as Error).message }, { status: 500 })
+    console.error("Error deleting post:", error);
+    return new Response(
+      JSON.stringify({
+        error: (error as Error).message || "Internal Server Error",
+      }),
+      { status: 500 }
     );
   }
 }

@@ -12,6 +12,13 @@ import nextDynamic from "next/dynamic";
 import TurndownService from "turndown";
 import { injectAltText } from "@/app/extensions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import Image from "next/image";
 import React from "react";
 
@@ -47,7 +54,7 @@ const RichTextEditor = nextDynamic(
 export default function NewPostPage() {
   const router = useRouter();
   const { toast } = useToast();
-  const { data: session, status } = useSession();
+  const { data: session, status: sessionStatus } = useSession();
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [metaTitle, setMetaTitle] = useState("");
@@ -57,6 +64,9 @@ export default function NewPostPage() {
   const [outputFormat, setOutputFormat] = useState<"html" | "markdown">("html");
   const [isLoading, setIsLoading] = useState(false);
   const [extensions, setExtensions] = useState<any[]>([]);
+  const [postStatus, setPostStatus] = useState<"DRAFT" | "PUBLISHED" | "ARCHIVED">(
+    "DRAFT"
+  );
   const editor = useRef<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [packageIds, setPackageIds] = useState<string[]>([]);
@@ -165,15 +175,17 @@ export default function NewPostPage() {
   const fetchPackage = async (packageId: string) => {
     try {
       setIsLoadingPackages(true);
-      const response = await fetch(`https://staging.holidaytribe.com:3000/package/getPackageByIds/${packageId}`);
+      const response = await fetch(
+        `https://staging.holidaytribe.com:3000/package/getPackageByIds/${packageId}`
+      );
       if (!response.ok) throw new Error("Failed to fetch package");
-      
+
       const data = await response.json();
       if (data.status && data.result && data.result[0]) {
         console.log("Package fetched successfully:", data.result[0]);
         // Add to packages list if not already present
-        setPackages(prev => {
-          if (prev.some(p => p.id === data.result[0].id)) {
+        setPackages((prev) => {
+          if (prev.some((p) => p.id === data.result[0].id)) {
             return prev;
           }
           return [...prev, data.result[0]];
@@ -196,7 +208,7 @@ export default function NewPostPage() {
 
   const addPackage = async () => {
     if (!packageInput.trim()) return;
-    
+
     // Check if already added
     if (packageIds.includes(packageInput)) {
       toast({
@@ -205,30 +217,34 @@ export default function NewPostPage() {
       });
       return;
     }
-    
+
     const success = await fetchPackage(packageInput);
     if (success) {
-      setPackageIds(prev => [...prev, packageInput]);
+      setPackageIds((prev) => [...prev, packageInput]);
       setPackageInput("");
     }
   };
 
   const removePackage = async (packageId: string) => {
-    setPackageIds(prev => prev.filter(id => id !== packageId));
-    setPackages(prev => prev.filter(p => p.id !== packageId));
+    setPackageIds((prev) => prev.filter((id) => id !== packageId));
+    setPackages((prev) => prev.filter((p) => p.id !== packageId));
   };
 
   const insertPackagesIntoContent = () => {
     if (!editor.current || packages.length === 0) return;
-    
+
     // Create HTML for all packages in a horizontal scrollable container
     const packagesHtml = `
       <div style="overflow-x: auto; white-space: nowrap; margin: 20px 0; padding: 10px 0; width: 100%; -webkit-overflow-scrolling: touch;">
         <div style="display: inline-flex; gap: 16px; padding: 0 4px;">
-          ${packages.map(pkg => `
+          ${packages
+            .map(
+              (pkg) => `
             <div style="display: inline-block; vertical-align: top; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); width: 280px; background: white;">
               <div style="height: 180px; overflow: hidden; position: relative; background-color: #f3f4f6;">
-                <img src="/images/package.svg" alt="${pkg.name}" style="width: 100%; height: 100%; object-fit: cover; display: block;">
+                <img src="/images/package.svg" alt="${
+                  pkg.name
+                }" style="width: 100%; height: 100%; object-fit: cover; display: block;">
               </div>
               <div style="padding: 16px 20px;">
                 <h3 style="margin: 0 0 8px 0; font-size: 16px; font-weight: 600; color: #111827; line-height: 1.3; white-space: normal;">
@@ -245,18 +261,24 @@ export default function NewPostPage() {
                   Weekend getaway
                 </div>
                 <div style="font-weight: 600; font-size: 14px; color: #111827; white-space: normal;">
-                  From ₹${pkg.starting_price ? pkg.starting_price.toLocaleString() : '29,000'}
+                  From ₹${
+                    pkg.starting_price
+                      ? pkg.starting_price.toLocaleString()
+                      : "29,000"
+                  }
                 </div>
               </div>
             </div>
-          `).join('')}
+          `
+            )
+            .join("")}
         </div>
       </div>
     `;
-    
+
     // Insert the content at cursor position
     editor.current.commands.insertContent(packagesHtml);
-    
+
     toast({
       title: "Success",
       description: "Packages inserted into content",
@@ -265,8 +287,9 @@ export default function NewPostPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (status === "loading") return;
-    if (!(session?.user as any)?.id) {
+
+    if (sessionStatus === "loading") return;
+    if (!session?.user) {
       toast({
         title: "Error",
         description: "You must be logged in to create a post",
@@ -276,117 +299,104 @@ export default function NewPostPage() {
       return;
     }
 
+    if (!title) {
+      toast({
+        title: "Error",
+        description: "Please enter a title",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsLoading(true);
+
     try {
-      console.log("Starting post creation process");
-      const slug =
-        title
-          .toLowerCase()
-          .replace(/[^\w\s]/g, "")
-          .replace(/\s+/g, "-") +
-        "-" +
-        Date.now().toString().slice(-6);
-
-      console.log("New post - Sending SEO data:", {
-        metaTitle,
-        metaDescription,
-        featureImage: featureImage
-          ? featureImage.substring(0, 50) + "..."
-          : null,
-        featureImageAlt,
-      });
-
-      console.log("New post - Sending package IDs:", packageIds);
-
+      // Process content to ensure alt tags are properly set
       const processedContent = injectAltText(content);
-      console.log("Content after alt text injection:", processedContent);
 
+      // Extract images from content
       const parser = new DOMParser();
-      console.log("Content being parsed:", processedContent);
       const doc = parser.parseFromString(processedContent, "text/html");
-      const mediaElements = doc.querySelectorAll("img, video");
-      console.log("Found media elements:", mediaElements.length);
+      const images = doc.querySelectorAll("img");
 
-      mediaElements.forEach((el: any, index) => {
-        if (el.tagName.toLowerCase() === "img") {
-          console.log(`Image ${index} - src: ${el.src.substring(0, 50)}...`);
-          console.log(`Image ${index} - alt: "${el.alt}"`);
-          console.log(`Image ${index} - outerHTML: ${el.outerHTML}`);
-        }
-      });
-
-      const cardBlocks = doc.querySelectorAll('div[data-type="card-block"]');
-
-      const media = Array.from(mediaElements).map((el: any) => {
-        const item = {
-          url: el.src,
-          type: el.tagName.toLowerCase() === "img" ? "image" : "video",
-          alt: el.tagName.toLowerCase() === "img" ? el.alt || "" : "",
+      const mediaItems = Array.from(images).map((img) => {
+        return {
+          url: img.src,
+          type: "image",
+          alt: img.alt || "",
         };
-        if (el.tagName.toLowerCase() === "img") {
-          console.log("Processing image for database save:", item);
-        }
-        return item;
       });
 
-      let cleanContent = processedContent;
-      cardBlocks.forEach((el) => {
-        cleanContent = cleanContent.replace(
-          el.outerHTML,
-          `[Card Block ID: ${el.getAttribute("data-card-id")}]`
-        );
+      // Find all card blocks in the content
+      const cardBlocks = Array.from(
+        doc.querySelectorAll('div[data-type="card-block"]')
+      ).map((block) => {
+        const cardId = block.getAttribute("data-card-id") || "";
+        const position = block.getAttribute("data-position") || "0";
+        return {
+          cardId,
+          position: parseInt(position),
+        };
       });
 
-      console.log(
-        "Final content to be saved:",
-        outputFormat === "markdown"
-          ? turndownService.turndown(cleanContent).substring(0, 200) + "..."
-          : cleanContent.substring(0, 200) + "..."
-      );
+      // Generate a slug from the title
+      const slug = title
+        .toLowerCase()
+        .replace(/[^\w\s]/gi, "")
+        .replace(/\s+/g, "-");
 
+      // Ensure authors can only create draft posts
+      let finalStatus = postStatus;
+      if (session.user.role === "author") {
+        finalStatus = "DRAFT";
+      }
+
+      // Handle markdown conversion if needed
+      let finalContent = processedContent;
+      if (outputFormat === "markdown") {
+        finalContent = turndownService.turndown(processedContent);
+      }
+
+      // Create the post via API
       const response = await fetch("/api/posts", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
           title,
+          content: finalContent,
+          slug,
+          excerpt: metaDescription || finalContent.substring(0, 157) + "...",
+          authorId: session.user.id,
           metaTitle: metaTitle || title,
-          metaDescription:
-            metaDescription ||
-            cleanContent.replace(/<[^>]+>/g, "").substring(0, 160),
+          metaDescription,
           featureImage,
           featureImageAlt,
+          media: mediaItems,
+          cardBlocks,
           packageIds,
-          content:
-            outputFormat === "markdown"
-              ? turndownService.turndown(cleanContent)
-              : cleanContent,
-          slug,
-          excerpt: cleanContent.replace(/<[^>]+>/g, "").substring(0, 160),
-          authorId: (session?.user as any)?.id,
-          media,
-          cardBlocks: Array.from(cardBlocks).map(
-            (el: Element, index: number) => ({
-              cardId: el.getAttribute("data-card-id"),
-              position: index,
-            })
-          ),
+          status: finalStatus,
         }),
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to create post");
+        const data = await response.json();
+        throw new Error(data.error || "Failed to create post");
       }
 
       toast({
         title: "Success",
         description: "Post created successfully",
       });
+
+      // Redirect to posts list
       router.push("/dashboard/posts");
-    } catch (error: any) {
+    } catch (error) {
+      console.error("Error creating post:", error);
       toast({
         title: "Error",
-        description: error.message || "Failed to create post",
+        description: (error as Error).message || "Failed to create post",
         variant: "destructive",
       });
     } finally {
@@ -394,7 +404,7 @@ export default function NewPostPage() {
     }
   };
 
-  if (status === "loading") {
+  if (sessionStatus === "loading") {
     return <div>Loading...</div>;
   }
 
@@ -440,7 +450,9 @@ export default function NewPostPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="metaDescription">Meta Description (for SEO)</Label>
+              <Label htmlFor="metaDescription">
+                Meta Description (for SEO)
+              </Label>
               <Textarea
                 id="metaDescription"
                 value={metaDescription}
@@ -514,44 +526,47 @@ export default function NewPostPage() {
                 value={packageInput}
                 onChange={(e) => setPackageInput(e.target.value)}
               />
-              <Button 
-                type="button" 
+              <Button
+                type="button"
                 onClick={addPackage}
                 disabled={isLoadingPackages}
               >
                 {isLoadingPackages ? "Loading..." : "Add Package"}
               </Button>
             </div>
-            
+
             {packageIds.length > 0 && (
               <>
                 <div className="flex flex-wrap gap-2 mt-4">
-                  {packageIds.map(id => (
-                    <div key={id} className="flex items-center gap-1 bg-muted px-3 py-1 rounded-full">
+                  {packageIds.map((id) => (
+                    <div
+                      key={id}
+                      className="flex items-center gap-1 bg-muted px-3 py-1 rounded-full"
+                    >
                       <span>{id}</span>
-                      <button 
-                        type="button" 
+                      <button
+                        type="button"
                         onClick={() => removePackage(id)}
                         className="text-muted-foreground hover:text-destructive"
                       >
-                        <span className="sr-only">Remove</span>
-                        ×
+                        <span className="sr-only">Remove</span>×
                       </button>
                     </div>
                   ))}
                 </div>
-                
+
                 {packages.length > 0 && (
                   <>
-                   
-                    
                     <div className="mt-6 overflow-x-auto pb-4">
                       <div className="flex gap-4">
-                        {packages.map(pkg => (
-                          <div key={pkg.id} className="flex-none w-[280px] rounded-xl overflow-hidden shadow-md bg-white">
+                        {packages.map((pkg) => (
+                          <div
+                            key={pkg.id}
+                            className="flex-none w-[280px] rounded-xl overflow-hidden shadow-md bg-white"
+                          >
                             <div className="h-[180px] bg-gray-100 relative">
-                              <img 
-                                src="/images/package.svg" 
+                              <img
+                                src="/images/package.svg"
                                 alt={pkg.name}
                                 className="w-full h-full object-cover"
                               />
@@ -571,7 +586,10 @@ export default function NewPostPage() {
                                 Weekend getaway
                               </div>
                               <div className="font-semibold">
-                                From ₹{pkg.starting_price ? pkg.starting_price.toLocaleString() : '29,000'}
+                                From ₹
+                                {pkg.starting_price
+                                  ? pkg.starting_price.toLocaleString()
+                                  : "29,000"}
                               </div>
                             </div>
                           </div>
@@ -619,6 +637,25 @@ export default function NewPostPage() {
             dark={false}
             disabled={isLoading}
           />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="status">Status</Label>
+          <Select
+            value={postStatus}
+            onValueChange={(value) =>
+              setPostStatus(value as "DRAFT" | "PUBLISHED" | "ARCHIVED")
+            }
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="DRAFT">DRAFT</SelectItem>
+              <SelectItem value="PUBLISHED">PUBLISHED</SelectItem>
+              <SelectItem value="ARCHIVED">ARCHIVED</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         <div className="flex justify-end space-x-4">

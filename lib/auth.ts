@@ -2,6 +2,7 @@ import { NextAuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import { compare } from 'bcrypt';
 import { prisma } from '@/lib/prisma';
+import { getServerSession as nextAuthGetServerSession } from 'next-auth';
 
 // Define our own User type that matches the Prisma schema
 interface PrismaUser {
@@ -38,6 +39,16 @@ declare module "next-auth/jwt" {
 		email: string;
 	}
 }
+
+// Export getServerSession function with authOptions for server-side authentication
+export const getServerSession = async () => {
+	return await nextAuthGetServerSession(authOptions);
+};
+
+// Export getSession function for API route usage
+export const getSession = async () => {
+	return await getServerSession();
+};
 
 export const authOptions: NextAuthOptions = {
 	secret: process.env.NEXTAUTH_SECRET,
