@@ -115,9 +115,6 @@ if (typeof window !== "undefined") {
               console.log(`Found ${allImages.length} images with src ${src}`);
 
             allImages.forEach((img) => {
-              img.setAttribute("alt", alt);
-              if (DEBUG_ALT_TEXT) console.log(`Updated alt text on DOM image`);
-
               // Also check if this image is inside the editor
               const editorRoot = img.closest(".ProseMirror");
               if (editorRoot) {

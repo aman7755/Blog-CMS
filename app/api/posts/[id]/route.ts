@@ -10,6 +10,19 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
+    // Add CORS headers
+    const headers = {
+      'Access-Control-Allow-Origin': '*', // Be more restrictive in production
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Content-Type': 'application/json',
+    };
+
+    // Handle OPTIONS request for CORS preflight
+    if (request.method === 'OPTIONS') {
+      return new Response(null, { headers, status: 200 });
+    }
+
     const post = await prisma.post.findUnique({
       where: { id: params.id },
       include: {
@@ -28,19 +41,22 @@ export async function GET(
     if (!post) {
       return new Response(JSON.stringify({ error: "Post not found" }), {
         status: 404,
+        headers,
       });
     }
 
     return new Response(JSON.stringify(post), {
       status: 200,
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers,
     });
   } catch (error) {
     console.error("Error fetching post:", error);
     return new Response(JSON.stringify({ error: "Internal Server Error" }), {
       status: 500,
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Content-Type': 'application/json',
+      },
     });
   }
 }
