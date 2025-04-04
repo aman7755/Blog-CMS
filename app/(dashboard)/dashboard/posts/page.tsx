@@ -238,7 +238,7 @@ function PostsContent() {
   };
 
   const handleView = (slug: string) => {
-    window.open(`/blog/${slug}`, "_blank");
+    window.open(`https://holidayer.in/blogs-cms/#/blog/${slug}`, "_blank");
   };
 
   const openStatusChangeDialog = (post: any) => {
@@ -493,7 +493,7 @@ function PostsContent() {
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  onClick={() => handleView(post.slug)}
+                                  onClick={() => handleView(post.id)}
                                 >
                                   <Eye className="h-4 w-4" />
                                 </Button>

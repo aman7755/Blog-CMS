@@ -121,6 +121,16 @@ export async function POST(request: NextRequest) {
       status = "DRAFT";
     }
 
+    // Check if manualId is provided
+    if (!data.manualId) {
+      return new Response(
+        JSON.stringify({
+          error: "Custom ID is required",
+        }),
+        { status: 400 }
+      );
+    }
+
     // Generate a slug from the title if not provided
     const slug =
       data.slug ||
@@ -129,21 +139,37 @@ export async function POST(request: NextRequest) {
         .replace(/[^\w\s]/gi, "")
         .replace(/\s+/g, "-");
 
+    // Note: This code sets the provided manual ID as the primary key
+    
+    // Prepare post data
+    const postData: any = {
+      id: data.manualId, // Use manual ID as the primary key
+      title: data.title,
+      content: data.content,
+      slug: slug,
+      status: status,
+      excerpt: data.excerpt || data.content.substring(0, 157) + "...",
+      authorId: session.user.id, // Always use the current user's ID
+      metaTitle: data.metaTitle || data.title,
+      metaDescription: data.metaDescription || data.excerpt,
+      featureImage: data.featureImage || null,
+      featureImageAlt: data.featureImageAlt || "",
+      packageIds: data.packageIds || [],
+      customTitle: data.customTitle || null,
+      keywords: data.keywords || null,
+    };
+    
     // Create the post
     const post = await prisma.post.create({
-      data: {
-        title: data.title,
-        content: data.content,
-        slug: slug,
-        status: status,
-        excerpt: data.excerpt || data.content.substring(0, 157) + "...",
-        authorId: session.user.id, // Always use the current user's ID
-        metaTitle: data.metaTitle || data.title,
-        metaDescription: data.metaDescription || data.excerpt,
-        featureImage: data.featureImage || null,
-        featureImageAlt: data.featureImageAlt || "",
-      },
+      data: postData,
     });
+
+    // If relatedBlogIds is provided, update it using a raw query
+    if (data.relatedBlogIds && Array.isArray(data.relatedBlogIds) && data.relatedBlogIds.length > 0) {
+      // Build a safe SQL query using separate parameters for each value
+      const query = `UPDATE "Post" SET "relatedBlogIds" = $1 WHERE id = $2`;
+      await prisma.$queryRawUnsafe(query, data.relatedBlogIds, data.manualId);
+    }
 
     // Handle media associations if provided
     if (data.media && Array.isArray(data.media)) {
@@ -180,11 +206,46 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error("Error creating post:", error);
+    
+    // Format the error for better client-side handling
+    let errorMessage = "Failed to create post";
+    let errorDetail = null;
+    
+    if (error instanceof Error) {
+      errorMessage = error.message;
+      
+      // Check for Prisma specific errors
+      if (errorMessage.includes("Unique constraint failed")) {
+        // Extract which field had the constraint error
+        const match = errorMessage.match(/Unique constraint failed on the fields: \(\`([^`]+)`\)/);
+        if (match && match[1]) {
+          errorDetail = {
+            type: "unique_constraint",
+            field: match[1],
+            message: `A post with this ${match[1]} already exists`
+          };
+        }
+        console.log("Prisma constraint error detected:", errorDetail);
+      } else if (errorMessage.includes("Foreign key constraint failed")) {
+        errorDetail = {
+          type: "foreign_key_constraint",
+          message: "Referenced record does not exist"
+        };
+      }
+    }
+    
     return new Response(
       JSON.stringify({
-        error: (error as Error).message || "Internal Server Error",
+        error: errorMessage,
+        errorDetail: errorDetail,
+        timestamp: new Date().toISOString()
       }),
-      { status: 500 }
+      { 
+        status: 500,
+        headers: {
+          'Content-Type': 'application/json',
+        } 
+      }
     );
   }
 }
@@ -213,38 +274,103 @@ export async function PUT(request: NextRequest) {
       media,
       cardBlocks,
       packageIds,
+      manualId,
+      customTitle,
+      keywords,
+      metaTitle,
+      metaDescription,
+      featureImage,
+      featureImageAlt,
+      status,
+      relatedBlogIds,
     } = await request.json();
+    
+    if (!manualId) {
+      return corsHeaders(
+        NextResponse.json(
+          { error: "Custom ID is required" },
+          { status: 400 }
+        )
+      );
+    }
+    
     // Delete existing media and card blocks
-    await prisma.postMedia.deleteMany({ where: { postId: id } });
-    await prisma.postCardBlock.deleteMany({ where: { postId: id } });
-    const post = await prisma.post.update({
-      where: { id },
-      data: {
-        title,
-        content,
-        slug,
-        excerpt,
-        authorId: authorId || validation.userId, // Use validated user ID if not provided
-        packageIds: packageIds || [],
-        media: {
-          create: media.map((item: any) => ({
-            url: item.url,
-            type: item.type,
-            alt: item.alt || "",
-          })),
-        },
-        cardBlocks: {
-          create: cardBlocks.map((item: any) => ({
-            cardId: item.cardId,
-            position: item.position,
-          })),
-        },
+    await prisma.postMedia.deleteMany({ where: { postId: manualId } });
+    await prisma.postCardBlock.deleteMany({ where: { postId: manualId } });
+    
+    // Prepare update data
+    const updateData: any = {
+      title,
+      content,
+      slug,
+      excerpt,
+      authorId: authorId || validation.userId, // Use validated user ID if not provided
+      packageIds: packageIds || [],
+      relatedBlogIds: relatedBlogIds || [],
+      status: status || "DRAFT",
+      metaTitle: metaTitle || null,
+      metaDescription: metaDescription || null,
+      featureImage: featureImage || null,
+      featureImageAlt: featureImageAlt || null,
+      customTitle: customTitle || null,
+      keywords: keywords || null,
+      media: {
+        create: media.map((item: any) => ({
+          url: item.url,
+          type: item.type,
+          alt: item.alt || "",
+        })),
       },
+      cardBlocks: {
+        create: cardBlocks.map((item: any) => ({
+          cardId: item.cardId,
+          position: item.position,
+        })),
+      },
+    };
+    
+    // The id parameter is actually the manualId since we're using the manualId as the primary key
+    const post = await prisma.post.update({
+      where: { id }, // Use the provided id parameter directly
+      data: updateData,
     });
     return corsHeaders(NextResponse.json(post));
   } catch (error) {
+    console.error("Error updating post in main route:", error);
+    
+    // Format the error for better client-side handling
+    let errorMessage = "Failed to update post";
+    let errorDetail = null;
+    
+    if (error instanceof Error) {
+      errorMessage = error.message;
+      
+      // Check for Prisma specific errors
+      if (errorMessage.includes("Unique constraint failed")) {
+        // Extract which field had the constraint error
+        const match = errorMessage.match(/Unique constraint failed on the fields: \(\`([^`]+)`\)/);
+        if (match && match[1]) {
+          errorDetail = {
+            type: "unique_constraint",
+            field: match[1],
+            message: `A post with this ${match[1]} already exists`
+          };
+        }
+        console.log("Prisma constraint error detected:", errorDetail);
+      } else if (errorMessage.includes("Foreign key constraint failed")) {
+        errorDetail = {
+          type: "foreign_key_constraint",
+          message: "Referenced record does not exist"
+        };
+      }
+    }
+    
     return corsHeaders(
-      NextResponse.json({ error: (error as Error).message }, { status: 500 })
+      NextResponse.json({ 
+        error: errorMessage,
+        errorDetail: errorDetail,
+        timestamp: new Date().toISOString()
+      }, { status: 500 })
     );
   }
 }
@@ -263,14 +389,52 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const { id } = await request.json();
+    const { manualId } = await request.json();
+    
+    if (!manualId) {
+      return corsHeaders(
+        NextResponse.json(
+          { error: "Custom ID is required" },
+          { status: 400 }
+        )
+      );
+    }
+    
+    // Use the provided ID directly as our primary key
     const post = await prisma.post.delete({
-      where: { id },
+      where: { id: manualId },
     });
     return corsHeaders(NextResponse.json(post));
   } catch (error) {
+    console.error("Error deleting post:", error);
+    
+    // Format the error for better client-side handling
+    let errorMessage = "Failed to delete post";
+    let errorDetail = null;
+    
+    if (error instanceof Error) {
+      errorMessage = error.message;
+      
+      // Check for Prisma specific errors
+      if (errorMessage.includes("Record to delete does not exist")) {
+        errorDetail = {
+          type: "not_found",
+          message: "The post you're trying to delete doesn't exist"
+        };
+      } else if (errorMessage.includes("Foreign key constraint failed")) {
+        errorDetail = {
+          type: "foreign_key_constraint",
+          message: "This post cannot be deleted because other records depend on it"
+        };
+      }
+    }
+    
     return corsHeaders(
-      NextResponse.json({ error: (error as Error).message }, { status: 500 })
+      NextResponse.json({ 
+        error: errorMessage,
+        errorDetail: errorDetail,
+        timestamp: new Date().toISOString()
+      }, { status: 500 })
     );
   }
 }

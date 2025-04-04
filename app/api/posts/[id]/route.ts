@@ -45,7 +45,79 @@ export async function GET(
       });
     }
 
-    return new Response(JSON.stringify(post), {
+    // Get related blogs if relatedBlogIds exists and is an array
+    type RelatedBlog = {
+      id: string;
+      title: string;
+      slug: string;
+      excerpt: string | null;
+      featureImage: string | null;
+      status: string;
+      createdAt: Date;
+      updatedAt: Date;
+      author: {
+        id: string;
+        name: string | null;
+      };
+    };
+    
+    let relatedBlogs: RelatedBlog[] = [];
+    // Cast post to any to access relatedBlogIds (this field exists but TypeScript doesn't know about it)
+    const postWithRelatedBlogIds = post as any;
+    
+    if (postWithRelatedBlogIds.relatedBlogIds && 
+        Array.isArray(postWithRelatedBlogIds.relatedBlogIds) && 
+        postWithRelatedBlogIds.relatedBlogIds.length > 0) {
+      
+      // Fetch all related blogs in a single query
+      relatedBlogs = await prisma.post.findMany({
+        where: {
+          id: {
+            in: postWithRelatedBlogIds.relatedBlogIds as string[]
+          }
+        },
+        select: {
+          id: true,
+          title: true,
+          slug: true,
+          excerpt: true,
+          featureImage: true,
+          status: true,
+          createdAt: true,
+          updatedAt: true,
+          author: {
+            select: {
+              id: true,
+              name: true,
+            }
+          }
+        }
+      });
+
+      // Sort to match the original order in relatedBlogIds
+      if (relatedBlogs.length > 0) {
+        // Create a map for O(1) lookups
+        const positionMap = new Map<string, number>();
+        postWithRelatedBlogIds.relatedBlogIds.forEach((id: string, index: number) => {
+          positionMap.set(id, index);
+        });
+
+        // Sort based on the original order
+        relatedBlogs.sort((a, b) => {
+          const posA = positionMap.get(a.id) ?? Number.MAX_SAFE_INTEGER;
+          const posB = positionMap.get(b.id) ?? Number.MAX_SAFE_INTEGER;
+          return posA - posB;
+        });
+      }
+    }
+
+    // Add the related blogs to the post response
+    const responseData = {
+      ...post,
+      relatedBlogs
+    };
+
+    return new Response(JSON.stringify(responseData), {
       status: 200,
       headers,
     });
@@ -89,6 +161,9 @@ export async function PUT(
       media,
       cardBlocks,
       packageIds,
+      relatedBlogIds,
+      customTitle,
+      keywords,
     } = body;
 
     // Log the media items received for debugging
@@ -222,6 +297,27 @@ export async function PUT(
       },
     });
 
+    // Update custom fields with a separate raw query to avoid Prisma type issues
+    if (relatedBlogIds !== undefined || customTitle !== undefined || keywords !== undefined) {
+      const relatedBlogsArray = Array.isArray(relatedBlogIds) ? relatedBlogIds : [];
+      const customTitleValue = customTitle === undefined ? null : customTitle;
+      const keywordsValue = keywords === undefined ? null : keywords;
+      
+      const query = `UPDATE "Post" SET 
+        "relatedBlogIds" = $1, 
+        "customTitle" = $2,
+        "keywords" = $3
+        WHERE id = $4`;
+        
+      await prisma.$queryRawUnsafe(
+        query, 
+        relatedBlogsArray, 
+        customTitleValue,
+        keywordsValue,
+        params.id
+      );
+    }
+
     // Only update media if it has changed
     if (mediaChanged) {
       // Delete existing media relationships
@@ -285,7 +381,39 @@ export async function PUT(
     return Response.json(completePost);
   } catch (error) {
     console.error("Error updating post:", error);
-    return Response.json({ error: "Failed to update post" }, { status: 500 });
+    
+    // Format the error for better client-side handling
+    let errorMessage = "Failed to update post";
+    let errorDetail = null;
+    
+    if (error instanceof Error) {
+      errorMessage = error.message;
+      
+      // Check for Prisma specific errors
+      if (errorMessage.includes("Unique constraint failed")) {
+        // Extract which field had the constraint error
+        const match = errorMessage.match(/Unique constraint failed on the fields: \(\`([^`]+)`\)/);
+        if (match && match[1]) {
+          errorDetail = {
+            type: "unique_constraint",
+            field: match[1],
+            message: `A post with this ${match[1]} already exists`
+          };
+        }
+        console.log("Prisma constraint error detected:", errorDetail);
+      } else if (errorMessage.includes("Foreign key constraint failed")) {
+        errorDetail = {
+          type: "foreign_key_constraint",
+          message: "Referenced record does not exist"
+        };
+      }
+    }
+    
+    return Response.json({ 
+      error: errorMessage,
+      errorDetail: errorDetail,
+      timestamp: new Date().toISOString()
+    }, { status: 500 });
   }
 }
 

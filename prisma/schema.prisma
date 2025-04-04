@@ -30,7 +30,7 @@ model Invitation {
 }
 
 model Post {
-  id              String          @id @default(uuid())
+  id              String          @id
   title           String
   content         String
   slug            String          @unique
@@ -44,6 +44,9 @@ model Post {
   featureImage    String?
   featureImageAlt String?
   packageIds      String[]        @default([])
+  relatedBlogIds  String[]        @default([])
+  customTitle     String?
+  keywords        String?
   author          User            @relation(fields: [authorId], references: [id])
   cardBlocks      PostCardBlock[]
   media           PostMedia[]

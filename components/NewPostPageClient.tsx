@@ -73,12 +73,22 @@ export default function NewPostPage() {
   const [packageInput, setPackageInput] = useState("");
   const [packages, setPackages] = useState<any[]>([]);
   const [isLoadingPackages, setIsLoadingPackages] = useState(false);
+  const [manualId, setManualId] = useState("");
+  const [customTitle, setCustomTitle] = useState("");
+  const [keywords, setKeywords] = useState("");
+  const [relatedBlogIds, setRelatedBlogIds] = useState<string[]>([]);
+  const [selectedBlogId, setSelectedBlogId] = useState("");
+  const [availableBlogs, setAvailableBlogs] = useState<any[]>([]);
+  const [isLoadingBlogs, setIsLoadingBlogs] = useState(false);
   const turndownService = new TurndownService();
 
   useEffect(() => {
     import("@/app/extensions").then((mod) => {
       setExtensions(mod.extensions);
     });
+    
+    // Fetch available blogs when component mounts
+    fetchBlogs();
   }, []);
 
   turndownService.addRule("images", {
@@ -285,6 +295,59 @@ export default function NewPostPage() {
     });
   };
 
+  const fetchBlogs = async () => {
+    try {
+      setIsLoadingBlogs(true);
+      const response = await fetch("/api/posts");
+      if (!response.ok) throw new Error("Failed to fetch blogs");
+
+      const data = await response.json();
+      console.log("Fetched blogs:", data);
+      
+      if (data && Array.isArray(data.posts)) {
+        setAvailableBlogs(data.posts);
+      } else if (data && Array.isArray(data)) {
+        setAvailableBlogs(data);
+      } else {
+        console.error("Unexpected API response format:", data);
+        toast({
+          title: "Error",
+          description: "Unexpected API response format",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error("Error fetching blogs:", error);
+      toast({
+        title: "Error",
+        description: "Failed to fetch available blogs",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoadingBlogs(false);
+    }
+  };
+
+  const addRelatedBlog = () => {
+    if (!selectedBlogId) return;
+    
+    // Check if already added
+    if (relatedBlogIds.includes(selectedBlogId)) {
+      toast({
+        title: "Already added",
+        description: "This blog is already in the related blogs list",
+      });
+      return;
+    }
+
+    setRelatedBlogIds((prev) => [...prev, selectedBlogId]);
+    setSelectedBlogId("");
+  };
+
+  const removeRelatedBlog = (blogId: string) => {
+    setRelatedBlogIds((prev) => prev.filter((id) => id !== blogId));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -296,6 +359,15 @@ export default function NewPostPage() {
         variant: "destructive",
       });
       router.push("/login");
+      return;
+    }
+
+    if (!manualId) {
+      toast({
+        title: "Error",
+        description: "Please enter a custom ID",
+        variant: "destructive",
+      });
       return;
     }
 
@@ -376,13 +448,81 @@ export default function NewPostPage() {
           media: mediaItems,
           cardBlocks,
           packageIds,
+          manualId, // Send manual ID to be used as primary key
           status: finalStatus,
+          customTitle,
+          keywords,
+          relatedBlogIds, // Add the related blog IDs to the request
         }),
       });
 
+      // Read the response first - but don't await it twice
+      let data;
+      try {
+        data = await response.json();
+      } catch (parseError) {
+        console.error("Error parsing response:", parseError);
+        throw new Error("Failed to parse server response");
+      }
+      
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || "Failed to create post");
+        // Extract meaningful error message from various formats
+        let errorMessage = "Failed to create post";
+        let errorDetail = "";
+        console.error("API Error Response:", data);
+        
+        if (data) {
+          if (typeof data.error === 'string') {
+            // If it's a simple string error
+            errorMessage = data.error;
+          }
+          
+          // Check for the structured errorDetail from our updated API
+          if (data.errorDetail) {
+            const detail = data.errorDetail;
+            
+            if (detail.type === 'unique_constraint') {
+              errorMessage = detail.message || `A post with this ${detail.field} already exists`;
+              errorDetail = `Please use a different ${detail.field}`;
+            } else if (detail.type === 'foreign_key_constraint') {
+              errorMessage = "Reference error";
+              errorDetail = detail.message || "One of the references in your post doesn't exist";
+            }
+          } else if (data.error && typeof data.error !== 'string') {
+            // Fallback for other error formats
+            const errorStr = JSON.stringify(data.error);
+            if (errorStr.includes("Unique constraint failed")) {
+              const match = errorStr.match(/Unique constraint failed on the fields: \(\`([^`]+)`\)/);
+              if (match && match[1]) {
+                errorMessage = `A post with this ${match[1]} already exists`;
+                errorDetail = "Please use a different " + match[1];
+              } else {
+                errorMessage = "A post with these details already exists";
+                errorDetail = "Please check for duplicate content";
+              }
+            } else if (errorStr.includes("Foreign key constraint failed")) {
+              errorMessage = "Reference error";
+              errorDetail = "One of the references in your post points to an item that doesn't exist";
+            } else {
+              // Use the error object as a string
+              errorMessage = "Creation failed";
+              errorDetail = errorStr.substring(0, 100); // Limit length for toast
+            }
+          }
+        }
+        
+        console.log('SHOWING ERROR TOAST:', {errorMessage, errorDetail});
+        toast({
+          title: "Error",
+          description: errorDetail ? `${errorMessage}: ${errorDetail}` : errorMessage,
+          variant: "destructive",
+        });
+        console.log('TOAST WAS CALLED');
+        
+        // Store that we showed the toast to prevent duplicates
+        window._toastShown = true;
+        
+        throw new Error(errorMessage);
       }
 
       toast({
@@ -394,12 +534,24 @@ export default function NewPostPage() {
       router.push("/dashboard/posts");
     } catch (error) {
       console.error("Error creating post:", error);
-      toast({
-        title: "Error",
-        description: (error as Error).message || "Failed to create post",
-        variant: "destructive",
-      });
+      
+      // Don't show another toast if we already showed one for the API error
+      if (!(typeof window !== 'undefined' && (window as any)._toastShown)) {
+        console.log('SHOWING CATCH ERROR TOAST');
+        toast({
+          title: "Error",
+          description: (error as Error).message || "Failed to create post",
+          variant: "destructive",
+        });
+        console.log('CATCH TOAST WAS CALLED');
+      } else {
+        console.log('SUPPRESSING DUPLICATE TOAST');
+      }
     } finally {
+      if (typeof window !== 'undefined') {
+        // Reset the flag
+        (window as any)._toastShown = false;
+      }
       setIsLoading(false);
     }
   };
@@ -420,6 +572,27 @@ export default function NewPostPage() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-8">
+        <Card className="my-4 border shadow-sm">
+          <CardHeader>
+            <CardTitle>Post ID</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="manualId">Custom ID</Label>
+              <Input
+                id="manualId"
+                value={manualId}
+                onChange={(e) => setManualId(e.target.value)}
+                placeholder="Enter a custom ID"
+                required
+              />
+              <p className="text-xs text-gray-500">
+                This ID will be used as the primary identifier for the post and cannot be changed later
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+
         <div className="space-y-2">
           <Label htmlFor="title">Title</Label>
           <Input
@@ -600,6 +773,98 @@ export default function NewPostPage() {
                 )}
               </>
             )}
+          </CardContent>
+        </Card>
+
+        <Card className="my-4 border shadow-sm">
+          <CardHeader>
+            <CardTitle>Additional Content</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="customTitle">Display Title</Label>
+              <Input
+                id="customTitle"
+                value={customTitle}
+                onChange={(e) => setCustomTitle(e.target.value)}
+                placeholder="Enter a display title"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="keywords">Keywords</Label>
+              <Input
+                id="keywords"
+                value={keywords}
+                onChange={(e) => setKeywords(e.target.value)}
+                placeholder="Enter keywords separated by commas"
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="my-4 border shadow-sm">
+          <CardHeader>
+            <CardTitle>Most Read Blogs</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex gap-2">
+              <Select
+                value={selectedBlogId}
+                onValueChange={setSelectedBlogId}
+                disabled={isLoadingBlogs}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select a blog to add" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableBlogs.length > 0 ? (
+                    availableBlogs.map((blog) => (
+                      <SelectItem key={blog.id} value={blog.id || ""}>
+                        {blog.id || "No ID"}
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <SelectItem value="no-blogs" disabled>
+                      No blogs available
+                    </SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+              <Button
+                type="button"
+                onClick={addRelatedBlog}
+                disabled={isLoadingBlogs || !selectedBlogId}
+              >
+                Add Blog
+              </Button>
+            </div>
+
+            {relatedBlogIds.length > 0 && (
+              <div className="flex flex-wrap gap-2 mt-4">
+                {relatedBlogIds.map((id) => {
+                  const blog = availableBlogs.find((b) => b.id === id);
+                  return (
+                    <div
+                      key={id}
+                      className="flex items-center gap-1 bg-muted px-3 py-1 rounded-full"
+                    >
+                      <span>{id}</span>
+                      <button
+                        type="button"
+                        onClick={() => removeRelatedBlog(id)}
+                        className="text-muted-foreground hover:text-destructive"
+                      >
+                        <span className="sr-only">Remove</span>×
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            
+            <p className="text-xs text-gray-500">
+              Add other blog posts that are relevant or most read in relation to this post
+            </p>
           </CardContent>
         </Card>
 
